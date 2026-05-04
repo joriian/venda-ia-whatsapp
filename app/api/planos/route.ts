@@ -14,7 +14,16 @@ export async function GET() {
     .order("meses", { ascending: true });
 
   if (error) {
-    return NextResponse.json({ error: "Erro ao buscar planos" }, { status: 500 });
+    console.log("ERRO SUPABASE PLANOS:", error);
+
+    return NextResponse.json(
+      {
+        error: "Erro ao buscar planos",
+        detalhe: error.message,
+        code: error.code,
+      },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json(data);
