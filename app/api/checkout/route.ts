@@ -1,40 +1,28 @@
 import { NextResponse } from "next/server";
 import axios from "axios";
+import { createClient } from "@supabase/supabase-js";
 
-const PLANOS = {
-  mensal: {
-    nome: "Plano Mensal",
-    meses: 1,
-    valor: 29.9,
-  },
-  trimestral: {
-    nome: "Plano Trimestral",
-    meses: 3,
-    valor: 79.9,
-  },
-  semestral: {
-    nome: "Plano Semestral",
-    meses: 6,
-    valor: 149.9,
-  },
-  anual: {
-    nome: "Plano Anual",
-    meses: 12,
-    valor: 279.9,
-  },
-};
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { planoId, email } = body;
 
-    const plano = PLANOS[planoId as keyof typeof PLANOS];
+    // 🔥 BUSCAR DO BANCO
+    const { data: plano, error } = await supabase
+      .from("planos")
+      .select("*")
+      .eq("id", planoId)
+      .single();
 
-    if (!plano) {
+    if (error || !plano) {
       return NextResponse.json(
-        { error: "Plano inválido" },
-        { status: 400 }
+        { error: "Plano não encontrado" },
+        { status: 404 }
       );
     }
 
@@ -49,17 +37,16 @@ export async function POST(req: Request) {
             title: `IA WhatsApp - ${plano.nome}`,
             quantity: 1,
             currency_id: "BRL",
-            unit_price: plano.valor,
+            unit_price: Number(plano.valor),
           },
         ],
-        payer: {
-          email: email || "cliente@email.com",
-        },
         metadata: {
-          plano_id: planoId,
-          plano_nome: plano.nome,
+          plano_id: plano.id,
           meses: plano.meses,
           valor: plano.valor,
+        },
+        payer: {
+          email: email || "cliente@email.com",
         },
         back_urls: {
           success: `${siteUrl}/sucesso`,
@@ -83,7 +70,7 @@ export async function POST(req: Request) {
     console.log("ERRO MP:", error.response?.data || error.message);
 
     return NextResponse.json(
-      { error: "Erro ao criar pagamento", detalhe: error.response?.data },
+      { error: "Erro ao criar pagamento" },
       { status: 500 }
     );
   }
