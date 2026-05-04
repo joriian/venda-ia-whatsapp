@@ -10,7 +10,6 @@ const supabase = createClient(
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-
     console.log("WEBHOOK MP:", body);
 
     const paymentId = body.data?.id;
@@ -19,7 +18,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    const pagamento = await axios.get(
+    const { data: pagamentoResponse } = await axios.get(
       `https://api.mercadopago.com/v1/payments/${paymentId}`,
       {
         headers: {
@@ -28,24 +27,42 @@ export async function POST(req: Request) {
       }
     );
 
-    const payment = pagamento.data;
-
-    if (payment.status !== "approved") {
+    if (pagamentoResponse.status !== "approved") {
       return NextResponse.json({ ok: true });
     }
 
-    const planoId = payment.metadata?.plano_id;
-    const meses = Number(payment.metadata?.meses || 1);
-    const email = payment.payer?.email || "";
-    const valor = Number(payment.transaction_amount || 0);
+    const clienteId =
+      pagamentoResponse.metadata?.cliente_id ||
+      pagamentoResponse.external_reference;
 
-    const instanceName = `cliente_${paymentId}`;
+    const planoId = pagamentoResponse.metadata?.plano_id;
+    const meses = Number(pagamentoResponse.metadata?.meses || 1);
+    const valor = Number(pagamentoResponse.transaction_amount || 0);
+
+    const dataInicio = new Date();
+    const dataExpiracao = new Date();
+    dataExpiracao.setMonth(dataExpiracao.getMonth() + meses);
 
     await supabase.from("pagamentos_ia_whatsapp").insert({
+      cliente_id: clienteId,
+      plano_id: planoId,
+      payment_id: String(paymentId),
       mercado_pago_id: String(paymentId),
       status: "approved",
       valor,
     });
+
+    await supabase
+      .from("clientes_ia_whatsapp")
+      .update({
+        status: "ativo",
+        plano_id: planoId,
+        data_inicio: dataInicio.toISOString(),
+        data_expiracao: dataExpiracao.toISOString(),
+      })
+      .eq("id", clienteId);
+
+    const instanceName = `cliente_${clienteId}`.replace(/-/g, "");
 
     await axios.post(
       `${process.env.EVOLUTION_API_URL}/instance/create`,
@@ -61,6 +78,7 @@ export async function POST(req: Request) {
     );
 
     await supabase.from("instancias_evolution").insert({
+      cliente_id: clienteId,
       instance_name: instanceName,
       status: "aguardando_qrcode",
     });
@@ -71,6 +89,12 @@ export async function POST(req: Request) {
   } catch (error: any) {
     console.log("ERRO WEBHOOK:", error.response?.data || error.message);
 
-    return NextResponse.json({ error: true }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: true,
+        detalhe: error.response?.data || error.message,
+      },
+      { status: 500 }
+    );
   }
 }
