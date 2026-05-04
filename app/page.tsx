@@ -1,36 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-const planos = [
-  {
-    id: "mensal",
-    nome: "1 Mês",
-    preco: "R$ 29,90",
-    descricao: "Acesso por 30 dias",
-  },
-  {
-    id: "trimestral",
-    nome: "3 Meses",
-    preco: "R$ 79,90",
-    descricao: "Acesso por 90 dias",
-  },
-  {
-    id: "semestral",
-    nome: "6 Meses",
-    preco: "R$ 149,90",
-    descricao: "Acesso por 180 dias",
-  },
-  {
-    id: "anual",
-    nome: "1 Ano",
-    preco: "R$ 279,90",
-    descricao: "Acesso por 12 meses",
-  },
-];
+type Plano = {
+  id: string;
+  nome: string;
+  meses: number;
+  valor: number;
+};
 
 export default function Home() {
+  const [planos, setPlanos] = useState<Plano[]>([]);
   const [loadingPlano, setLoadingPlano] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function carregarPlanos() {
+      const res = await fetch("/api/planos");
+      const data = await res.json();
+      setPlanos(data);
+    }
+
+    carregarPlanos();
+  }, []);
 
   async function comprar(planoId: string) {
     setLoadingPlano(planoId);
@@ -38,27 +29,18 @@ export default function Home() {
     try {
       const res = await fetch("/api/checkout", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          planoId,
-          email: "cliente@email.com",
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planoId, email: "cliente@email.com" }),
       });
 
       const data = await res.json();
 
       if (!data.init_point) {
         alert(data.error || "Erro ao gerar pagamento");
-        console.log("ERRO CHECKOUT:", data);
         return;
       }
 
       window.location.href = data.init_point;
-    } catch (error) {
-      alert("Erro ao conectar com o checkout");
-      console.error(error);
     } finally {
       setLoadingPlano(null);
     }
@@ -83,18 +65,23 @@ export default function Home() {
             >
               <h2 className="text-2xl font-bold">{plano.nome}</h2>
 
-              <p className="text-3xl font-bold mt-4">{plano.preco}</p>
+              <p className="text-3xl font-bold mt-4">
+                {Number(plano.valor).toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })}
+              </p>
 
-              <p className="text-gray-400 mt-2">{plano.descricao}</p>
+              <p className="text-gray-400 mt-2">
+                Acesso por {plano.meses} {plano.meses === 1 ? "mês" : "meses"}
+              </p>
 
               <button
                 onClick={() => comprar(plano.id)}
                 disabled={loadingPlano !== null}
                 className="mt-6 w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-5 py-3 rounded-lg font-semibold"
               >
-                {loadingPlano === plano.id
-                  ? "Gerando..."
-                  : "Assinar agora"}
+                {loadingPlano === plano.id ? "Gerando..." : "Assinar agora"}
               </button>
             </div>
           ))}
