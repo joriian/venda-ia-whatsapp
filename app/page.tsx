@@ -17,7 +17,10 @@ export default function Home() {
     async function carregarPlanos() {
       const res = await fetch("/api/planos");
       const data = await res.json();
-      setPlanos(data);
+
+      if (Array.isArray(data)) {
+        setPlanos(data);
+      }
     }
 
     carregarPlanos();
@@ -29,18 +32,29 @@ export default function Home() {
     try {
       const res = await fetch("/api/checkout", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planoId, email: "cliente@email.com" }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          planoId,
+          nome: "Cliente Teste",
+          email: "cliente@email.com",
+          telefone: "5599999999999",
+        }),
       });
 
       const data = await res.json();
 
       if (!data.init_point) {
         alert(data.error || "Erro ao gerar pagamento");
+        console.log("ERRO CHECKOUT:", data);
         return;
       }
 
       window.location.href = data.init_point;
+    } catch (error) {
+      alert("Erro ao conectar com o checkout");
+      console.error(error);
     } finally {
       setLoadingPlano(null);
     }

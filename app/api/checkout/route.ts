@@ -10,24 +10,36 @@ const supabase = createClient(
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { planoId, email } = body;
+    const { planoId, email, nome, telefone } = body;
 
-    // 🔥 BUSCAR DO BANCO
-    const { data: plano, error } = await supabase
+    const { data: plano, error: planoError } = await supabase
       .from("planos")
       .select("*")
       .eq("id", planoId)
+      .eq("ativo", true)
       .single();
 
-    if (error || !plano) {
-      return NextResponse.json(
-        { error: "Plano não encontrado" },
-        { status: 404 }
-      );
+    if (planoError || !plano) {
+      return NextResponse.json({ error: "Plano inválido" }, { status: 400 });
     }
 
-    const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+    const { data: cliente, error: clienteError } = await supabase
+      .from("clientes_ia_whatsapp")
+      .insert({
+        nome: nome || "Cliente",
+        email: email || "",
+        telefone: telefone || "",
+        plano_id: plano.id,
+        status: "aguardando_pagamento",
+      })
+      .select()
+      .single();
+
+    if (clienteError || !cliente) {
+      return NextResponse.json({ error: "Erro ao criar cliente" }, { status: 500 });
+    }
+
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL!;
 
     const response = await axios.post(
       "https://api.mercadopago.com/checkout/preferences",
@@ -40,16 +52,18 @@ export async function POST(req: Request) {
             unit_price: Number(plano.valor),
           },
         ],
+        payer: {
+          email: email || "cliente@email.com",
+        },
+        external_reference: cliente.id,
         metadata: {
+          cliente_id: cliente.id,
           plano_id: plano.id,
           meses: plano.meses,
           valor: plano.valor,
         },
-        payer: {
-          email: email || "cliente@email.com",
-        },
         back_urls: {
-          success: `${siteUrl}/sucesso`,
+          success: `${siteUrl}/sucesso?cliente=${cliente.id}`,
           failure: `${siteUrl}/erro`,
           pending: `${siteUrl}/pendente`,
         },
@@ -63,15 +77,9 @@ export async function POST(req: Request) {
       }
     );
 
-    return NextResponse.json({
-      init_point: response.data.init_point,
-    });
+    return NextResponse.json({ init_point: response.data.init_point });
   } catch (error: any) {
-    console.log("ERRO MP:", error.response?.data || error.message);
-
-    return NextResponse.json(
-      { error: "Erro ao criar pagamento" },
-      { status: 500 }
-    );
+    console.log("ERRO CHECKOUT:", error.response?.data || error.message);
+    return NextResponse.json({ error: "Erro ao criar pagamento" }, { status: 500 });
   }
 }
