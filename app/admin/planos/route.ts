@@ -7,17 +7,26 @@ const supabase = createClient(
 );
 
 function autorizado(req: Request) {
-  const senha = req.headers.get("x-admin-password");
-  return senha && senha === process.env.ADMIN_PASSWORD;
+  const senhaDigitada = req.headers.get("x-admin-password")?.trim();
+  const senhaEnv = process.env.ADMIN_PASSWORD?.trim();
+
+  return senhaDigitada === senhaEnv;
 }
 
 export async function PUT(req: Request) {
   if (!autorizado(req)) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Senha incorreta ou ADMIN_PASSWORD não configurado" },
+      { status: 401 }
+    );
   }
 
   const body = await req.json();
   const { id, nome, valor, meses, ativo } = body;
+
+  if (!id) {
+    return NextResponse.json({ error: "ID do plano obrigatório" }, { status: 400 });
+  }
 
   const { error } = await supabase
     .from("planos")
