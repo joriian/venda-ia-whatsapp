@@ -1,43 +1,72 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 export default function Sucesso() {
+  const params = useSearchParams();
+  const clienteId = params.get("cliente");
+
   const [qr, setQr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const cliente = params.get("cliente");
+  async function carregarQR() {
+    if (!clienteId) return;
 
-    if (!cliente) return;
+    try {
+      const res = await fetch("/api/instance/qrcode", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ clienteId }),
+      });
 
-    const instance = `cliente_${cliente.replace(/-/g, "")}`;
-
-    async function buscarQR() {
-      const res = await fetch(`/api/instance/qrcode?instance=${instance}`);
       const data = await res.json();
 
-      if (data?.base64) {
-        setQr(data.base64);
-      } else {
-        setTimeout(buscarQR, 3000);
+      if (data.qrcode) {
+        setQr(data.qrcode);
       }
+    } catch (err) {
+      console.log("Erro QR:", err);
+    } finally {
+      setLoading(false);
     }
+  }
 
-    buscarQR();
-  }, []);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      carregarQR();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [clienteId]);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-black text-white">
-      <h1 className="text-3xl mb-4">Pagamento aprovado 🎉</h1>
+    <main className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-6 text-center">
+      <h1 className="text-3xl font-bold mb-6">
+        Pagamento aprovado 🎉
+      </h1>
 
-      <p className="mb-6">Escaneie o QR Code para conectar seu WhatsApp</p>
+      <p className="text-gray-400 mb-8">
+        Escaneie o QR Code para conectar seu WhatsApp
+      </p>
 
-      {qr ? (
-        <img src={qr} alt="QR Code" />
-      ) : (
-        <p>Gerando QR Code...</p>
+      {loading && <p>Carregando QR Code...</p>}
+
+      {qr && (
+        <img
+          src={qr}
+          alt="QR Code"
+          className="bg-white p-4 rounded-xl"
+        />
       )}
-    </div>
+
+      {!loading && !qr && (
+        <p className="text-yellow-400">
+          Aguardando QR Code...
+        </p>
+      )}
+    </main>
   );
 }
