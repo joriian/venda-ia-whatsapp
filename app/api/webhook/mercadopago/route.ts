@@ -12,9 +12,9 @@ export async function POST(req: Request) {
     const body = await req.json();
     console.log("WEBHOOK MP:", body);
 
-    const paymentId = body.data?.id;
+    const paymentId = body.data?.id || body.resource;
 
-    if (!paymentId) {
+    if (!paymentId || String(paymentId).startsWith("http")) {
       return NextResponse.json({ ok: true });
     }
 
@@ -38,6 +38,10 @@ export async function POST(req: Request) {
     const planoId = pagamentoResponse.metadata?.plano_id;
     const meses = Number(pagamentoResponse.metadata?.meses || 1);
     const valor = Number(pagamentoResponse.transaction_amount || 0);
+
+    if (!clienteId) {
+      throw new Error("Cliente ID não encontrado no pagamento");
+    }
 
     const dataInicio = new Date();
     const dataExpiracao = new Date();
@@ -64,15 +68,22 @@ export async function POST(req: Request) {
 
     const instanceName = `cliente_${clienteId}`.replace(/-/g, "");
 
+    const evolutionPayload = {
+      instanceName,
+      qrcode: true,
+      integration: "WHATSAPP-BAILEYS",
+    };
+
+    console.log("CRIANDO INSTANCIA:", evolutionPayload);
+
     await axios.post(
       `${process.env.EVOLUTION_API_URL}/instance/create`,
-      {
-        instanceName,
-      },
+      evolutionPayload,
       {
         headers: {
-          apikey: process.env.EVOLUTION_API_KEY!,
           "Content-Type": "application/json",
+          apikey: process.env.EVOLUTION_API_KEY!,
+          Authorization: `Bearer ${process.env.EVOLUTION_API_KEY!}`,
         },
       }
     );
