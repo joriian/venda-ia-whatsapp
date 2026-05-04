@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import axios from "axios";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(req: Request) {
   try {
@@ -13,7 +19,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    // buscar pagamento
     const pagamento = await axios.get(
       `https://api.mercadopago.com/v1/payments/${paymentId}`,
       {
@@ -23,22 +28,42 @@ export async function POST(req: Request) {
       }
     );
 
-    const status = pagamento.data.status;
+    const payment = pagamento.data;
 
-    if (status !== "approved") {
+    if (payment.status !== "approved") {
       return NextResponse.json({ ok: true });
     }
 
-    // 🔥 AQUI VAMOS CRIAR INSTÂNCIA
-    const instanceName = `cliente_${Date.now()}`;
+    const planoId = payment.metadata?.plano_id;
+    const meses = Number(payment.metadata?.meses || 1);
+    const email = payment.payer?.email || "";
+    const valor = Number(payment.transaction_amount || 0);
+
+    const instanceName = `cliente_${paymentId}`;
+
+    await supabase.from("pagamentos_ia_whatsapp").insert({
+      mercado_pago_id: String(paymentId),
+      status: "approved",
+      valor,
+    });
 
     await axios.post(
       `${process.env.EVOLUTION_API_URL}/instance/create`,
       {
         instanceName,
-        token: process.env.EVOLUTION_API_KEY,
+      },
+      {
+        headers: {
+          apikey: process.env.EVOLUTION_API_KEY!,
+          "Content-Type": "application/json",
+        },
       }
     );
+
+    await supabase.from("instancias_evolution").insert({
+      instance_name: instanceName,
+      status: "aguardando_qrcode",
+    });
 
     console.log("INSTANCIA CRIADA:", instanceName);
 
