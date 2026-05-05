@@ -12,13 +12,10 @@ export async function POST(req: Request) {
     const body = await req.json();
     console.log("WEBHOOK MP:", body);
 
-    const paymentId = body.data?.id || body.resource;
+    const paymentId = body.data?.id;
+    if (!paymentId) return NextResponse.json({ ok: true });
 
-    if (!paymentId || String(paymentId).startsWith("http")) {
-      return NextResponse.json({ ok: true });
-    }
-
-    const { data: pagamentoResponse } = await axios.get(
+    const { data: pagamento } = await axios.get(
       `https://api.mercadopago.com/v1/payments/${paymentId}`,
       {
         headers: {
@@ -27,21 +24,16 @@ export async function POST(req: Request) {
       }
     );
 
-    if (pagamentoResponse.status !== "approved") {
+    if (pagamento.status !== "approved") {
       return NextResponse.json({ ok: true });
     }
 
     const clienteId =
-      pagamentoResponse.metadata?.cliente_id ||
-      pagamentoResponse.external_reference;
+      pagamento.metadata?.cliente_id || pagamento.external_reference;
 
-    const planoId = pagamentoResponse.metadata?.plano_id;
-    const meses = Number(pagamentoResponse.metadata?.meses || 1);
-    const valor = Number(pagamentoResponse.transaction_amount || 0);
-
-    if (!clienteId) {
-      throw new Error("Cliente ID não encontrado no pagamento");
-    }
+    const planoId = pagamento.metadata?.plano_id;
+    const meses = Number(pagamento.metadata?.meses || 1);
+    const valor = Number(pagamento.transaction_amount || 0);
 
     const dataInicio = new Date();
     const dataExpiracao = new Date();
@@ -51,7 +43,6 @@ export async function POST(req: Request) {
       cliente_id: clienteId,
       plano_id: planoId,
       payment_id: String(paymentId),
-      mercado_pago_id: String(paymentId),
       status: "approved",
       valor,
     });
@@ -68,33 +59,45 @@ export async function POST(req: Request) {
 
     const instanceName = `cliente_${clienteId}`.replace(/-/g, "");
 
-    const evolutionPayload = {
-      instanceName,
-      qrcode: true,
-      integration: "WHATSAPP-BAILEYS",
-    };
-
-    console.log("CRIANDO INSTANCIA:", evolutionPayload);
-
-    await axios.post(
-      `${process.env.EVOLUTION_API_URL}/instance/create`,
-      evolutionPayload,
+    // 🔥 VERIFICA SE JÁ EXISTE
+    const instances = await axios.get(
+      `${process.env.EVOLUTION_API_URL}/instance/fetchInstances`,
       {
         headers: {
-          "Content-Type": "application/json",
           apikey: process.env.EVOLUTION_API_KEY!,
-          Authorization: `Bearer ${process.env.EVOLUTION_API_KEY!}`,
         },
       }
     );
+
+    const jaExiste = instances.data.some(
+      (i: any) => i.name === instanceName
+    );
+
+    if (!jaExiste) {
+      await axios.post(
+        `${process.env.EVOLUTION_API_URL}/instance/create`,
+        {
+          instanceName,
+          qrcode: true,
+          integration: "WHATSAPP-BAILEYS",
+        },
+        {
+          headers: {
+            apikey: process.env.EVOLUTION_API_KEY!,
+          },
+        }
+      );
+
+      console.log("INSTANCIA CRIADA:", instanceName);
+    } else {
+      console.log("INSTANCIA JÁ EXISTE:", instanceName);
+    }
 
     await supabase.from("instancias_evolution").insert({
       cliente_id: clienteId,
       instance_name: instanceName,
       status: "aguardando_qrcode",
     });
-
-    console.log("INSTANCIA CRIADA:", instanceName);
 
     return NextResponse.json({ ok: true });
   } catch (error: any) {

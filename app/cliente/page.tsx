@@ -3,125 +3,61 @@
 import { useEffect, useState } from "react";
 
 export default function ClientePage() {
-  const [clienteId, setClienteId] = useState("");
-  const [qr, setQr] = useState("");
-  const [status, setStatus] = useState("Carregando...");
-  const [conectado, setConectado] = useState(false);
+  const [qr, setQr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    const id = url.searchParams.get("cliente");
+  const clienteId =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("cliente")
+      : null;
 
-    if (id) {
-      setClienteId(id);
-      verificar(id);
-    }
-  }, []);
+  const instanceName = clienteId
+    ? `cliente_${clienteId.replace(/-/g, "")}`
+    : "";
 
-  async function verificar(id: string) {
+  async function gerarQR() {
     try {
+      setLoading(true);
+
       const res = await fetch("/api/instance/qrcode", {
         method: "POST",
-        body: JSON.stringify({ clienteId: id }),
+        body: JSON.stringify({ instanceName }),
       });
 
       const data = await res.json();
 
-      if (data.conectado) {
-        setConectado(true);
-        setStatus("WhatsApp conectado");
-        return;
+      if (data?.base64) {
+        setQr(data.base64);
+      } else {
+        alert("QR ainda não disponível, tente novamente");
       }
-
-      if (data.qrcode) {
-        setQr(data.qrcode);
-        setStatus("Escaneie o QR Code");
-        return;
-      }
-
-      setStatus("Aguardando conexão...");
-      setTimeout(() => verificar(id), 3000);
-
-    } catch (err) {
-      setStatus("Erro ao verificar");
+    } catch {
+      alert("Erro ao gerar QR");
+    } finally {
+      setLoading(false);
     }
   }
 
-  async function conectar() {
-    setLoading(true);
-
-    await fetch("/api/instance/control", {
-      method: "POST",
-      body: JSON.stringify({
-        clienteId,
-        action: "connect",
-      }),
-    });
-
-    setTimeout(() => verificar(clienteId), 2000);
-    setLoading(false);
-  }
-
-  async function desconectar() {
-    setLoading(true);
-
-    await fetch("/api/instance/control", {
-      method: "POST",
-      body: JSON.stringify({
-        clienteId,
-        action: "disconnect",
-      }),
-    });
-
-    setConectado(false);
-    setQr("");
-    setStatus("Desconectado");
-
-    setLoading(false);
-  }
-
   return (
-    <div className="flex items-center justify-center min-h-screen bg-black text-white">
-      <div className="p-6 bg-zinc-900 rounded-xl text-center w-[350px]">
-
+    <main className="min-h-screen flex items-center justify-center bg-black text-white">
+      <div className="bg-zinc-900 p-8 rounded-xl text-center">
         <h1 className="text-xl mb-4">Área do Cliente</h1>
 
-        {conectado ? (
-          <>
-            <div className="text-green-500 text-lg font-bold mb-4">
-              ✅ Conectado
-            </div>
-
-            <button
-              onClick={desconectar}
-              disabled={loading}
-              className="w-full bg-red-600 py-2 rounded"
-            >
-              Desconectar WhatsApp
-            </button>
-          </>
+        {qr ? (
+          <img
+            src={`data:image/png;base64,${qr}`}
+            className="mx-auto"
+          />
         ) : (
-          <>
-            {qr ? (
-              <>
-                <p className="mb-2">{status}</p>
-                <img src={qr} alt="QR Code" className="mx-auto mb-4" />
-              </>
-            ) : (
-              <p className="mb-4">{status}</p>
-            )}
-
-            <button
-              onClick={conectar}
-              disabled={loading}
-              className="w-full bg-green-600 py-2 rounded"
-            >
-              {loading ? "Gerando..." : "Conectar WhatsApp"}
-            </button>
-          </>
+          <button
+            onClick={gerarQR}
+            className="bg-green-600 px-6 py-3 rounded"
+            disabled={loading}
+          >
+            {loading ? "Gerando..." : "Conectar WhatsApp"}
+          </button>
         )}
       </div>
-    </div>
+    </main>
   );
 }
