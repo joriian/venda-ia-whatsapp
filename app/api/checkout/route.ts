@@ -36,7 +36,10 @@ export async function POST(req: Request) {
       .single();
 
     if (clienteError || !cliente) {
-      return NextResponse.json({ error: "Erro ao criar cliente" }, { status: 500 });
+      return NextResponse.json(
+        { error: "Erro ao criar cliente" },
+        { status: 500 }
+      );
     }
 
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL!;
@@ -62,11 +65,17 @@ export async function POST(req: Request) {
           meses: plano.meses,
           valor: plano.valor,
         },
+
+        // 🔥 REDIRECIONAMENTO
         back_urls: {
           success: `${siteUrl}/sucesso?cliente=${cliente.id}`,
           failure: `${siteUrl}/erro`,
           pending: `${siteUrl}/pendente`,
         },
+
+        // 🔥 ISSO FAZ REDIRECIONAR AUTOMATICO
+        auto_return: "approved",
+
         notification_url: `${siteUrl}/api/webhook/mercadopago`,
       },
       {
@@ -80,6 +89,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ init_point: response.data.init_point });
   } catch (error: any) {
     console.log("ERRO CHECKOUT:", error.response?.data || error.message);
-    return NextResponse.json({ error: "Erro ao criar pagamento" }, { status: 500 });
+
+    return NextResponse.json(
+      { error: "Erro ao criar pagamento" },
+      { status: 500 }
+    );
   }
 }
