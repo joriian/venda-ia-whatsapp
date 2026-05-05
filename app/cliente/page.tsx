@@ -8,6 +8,7 @@ export default function ClientePage() {
   const [clienteId, setClienteId] = useState("");
   const [cliente, setCliente] = useState<any>(null);
   const [plano, setPlano] = useState<any>(null);
+  const [pagamentos, setPagamentos] = useState<any[]>([]);
   const [status, setStatus] = useState("Preparando área do cliente...");
   const [conectado, setConectado] = useState(false);
   const [bloqueado, setBloqueado] = useState(false);
@@ -49,6 +50,7 @@ export default function ClientePage() {
 
   async function iniciar(id: string, instance: string) {
     await carregarDados(id);
+    await carregarPagamentos(id);
 
     const ativo = await validarCliente(id);
 
@@ -76,6 +78,26 @@ export default function ClientePage() {
         setPlano(data.plano);
         localStorage.setItem("clienteNome", data.cliente?.nome || "");
         localStorage.setItem("clienteEmail", data.cliente?.email || "");
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  async function carregarPagamentos(id: string) {
+    try {
+      const res = await fetch("/api/cliente/pagamentos", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ clienteId: id }),
+      });
+
+      const data = await res.json();
+
+      if (data.ok) {
+        setPagamentos(data.pagamentos || []);
       }
     } catch (error) {
       console.error(error);
@@ -278,9 +300,26 @@ export default function ClientePage() {
     }
   }
 
+  function senhaForte(senha: string) {
+    const temMaiuscula = /[A-Z]/.test(senha);
+    const temMinuscula = /[a-z]/.test(senha);
+    const temNumero = /[0-9]/.test(senha);
+    const temEspecial = /[^A-Za-z0-9]/.test(senha);
+    const tamanhoOk = senha.length >= 8;
+
+    return tamanhoOk && temMaiuscula && temMinuscula && temNumero && temEspecial;
+  }
+
   async function alterarSenha() {
     if (!senhaAtual || !novaSenha) {
       alert("Preencha a senha atual e a nova senha.");
+      return;
+    }
+
+    if (!senhaForte(novaSenha)) {
+      alert(
+        "A nova senha deve ter no mínimo 8 caracteres, com letra maiúscula, minúscula, número e caractere especial."
+      );
       return;
     }
 
@@ -375,7 +414,7 @@ export default function ClientePage() {
           <div>
             <h1 className="text-3xl font-bold">Área do Cliente</h1>
             <p className="text-gray-400 mt-1">
-              Gerencie seu plano e sua conexão do WhatsApp.
+              Gerencie seu plano, pagamentos e conexão do WhatsApp.
             </p>
           </div>
 
@@ -486,10 +525,70 @@ export default function ClientePage() {
           </div>
 
           <div className="bg-zinc-900 border border-zinc-700 p-6 rounded-2xl lg:col-span-2">
+            <h2 className="text-xl font-bold mb-2">Histórico de pagamentos</h2>
+
+            <p className="text-gray-400 text-sm mb-5">
+              Veja os pagamentos registrados na sua conta.
+            </p>
+
+            <div className="overflow-x-auto border border-zinc-700 rounded-xl">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-700 text-left bg-zinc-800">
+                    <th className="p-3">Data</th>
+                    <th className="p-3">Plano</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3">Valor</th>
+                    <th className="p-3">Pagamento</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {pagamentos.map((pagamento) => (
+                    <tr key={pagamento.id || pagamento.payment_id} className="border-b border-zinc-800">
+                      <td className="p-3">
+                        {dataFormatada(
+                          pagamento.created_at ||
+                            pagamento.criado_em ||
+                            pagamento.data_criacao
+                        )}
+                      </td>
+                      <td className="p-3">{pagamento.plano_id || "-"}</td>
+                      <td className="p-3">
+                        <span className="px-3 py-1 rounded-full bg-green-900/40 text-green-400 border border-green-700 text-xs font-bold">
+                          {pagamento.status || "-"}
+                        </span>
+                      </td>
+                      <td className="p-3">{dinheiro(pagamento.valor || 0)}</td>
+                      <td className="p-3">{pagamento.payment_id || "-"}</td>
+                    </tr>
+                  ))}
+
+                  {pagamentos.length === 0 && (
+                    <tr>
+                      <td className="p-5 text-center text-gray-400" colSpan={5}>
+                        Nenhum pagamento encontrado.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <button
+              onClick={() => carregarPagamentos(clienteId)}
+              className="mt-4 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-5 py-3 rounded-lg font-semibold"
+            >
+              Atualizar histórico
+            </button>
+          </div>
+
+          <div className="bg-zinc-900 border border-zinc-700 p-6 rounded-2xl lg:col-span-2">
             <h2 className="text-xl font-bold mb-2">Alterar senha</h2>
 
             <p className="text-gray-400 text-sm mb-5">
-              Use uma senha com pelo menos 6 caracteres.
+              A senha precisa ter pelo menos 8 caracteres, uma letra maiúscula,
+              uma letra minúscula, um número e um caractere especial.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
