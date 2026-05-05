@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export default function AdminPage() {
   const [senha, setSenha] = useState("");
@@ -10,6 +10,16 @@ export default function AdminPage() {
   const [instancias, setInstancias] = useState<any[]>([]);
   const [dashboard, setDashboard] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+
+  const [buscaCliente, setBuscaCliente] = useState("");
+  const [filtroStatusCliente, setFiltroStatusCliente] = useState("todos");
+  const [paginaClientes, setPaginaClientes] = useState(1);
+
+  const [buscaInstancia, setBuscaInstancia] = useState("");
+  const [filtroStatusInstancia, setFiltroStatusInstancia] = useState("todos");
+  const [paginaInstancias, setPaginaInstancias] = useState(1);
+
+  const porPagina = 10;
 
   async function entrar() {
     const res = await fetch("/api/admin/dados", {
@@ -133,6 +143,80 @@ export default function AdminPage() {
     });
   }
 
+  const clientesFiltrados = useMemo(() => {
+    const busca = buscaCliente.toLowerCase().trim();
+
+    return clientes.filter((cliente) => {
+      const texto = [
+        cliente.nome,
+        cliente.email,
+        cliente.telefone,
+        cliente.status,
+        cliente.plano_id,
+        cliente.id,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      const bateBusca = !busca || texto.includes(busca);
+      const bateStatus =
+        filtroStatusCliente === "todos" || cliente.status === filtroStatusCliente;
+
+      return bateBusca && bateStatus;
+    });
+  }, [clientes, buscaCliente, filtroStatusCliente]);
+
+  const totalPaginasClientes = Math.max(
+    1,
+    Math.ceil(clientesFiltrados.length / porPagina)
+  );
+
+  const clientesPaginados = clientesFiltrados.slice(
+    (paginaClientes - 1) * porPagina,
+    paginaClientes * porPagina
+  );
+
+  const instanciasFiltradas = useMemo(() => {
+    const busca = buscaInstancia.toLowerCase().trim();
+
+    return instancias.filter((instancia) => {
+      const texto = [
+        instancia.instance,
+        instancia.status,
+        instancia.numero,
+        instancia.nome,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      const bateBusca = !busca || texto.includes(busca);
+      const bateStatus =
+        filtroStatusInstancia === "todos" ||
+        (filtroStatusInstancia === "conectado" && instancia.conectado) ||
+        (filtroStatusInstancia === "desconectado" && !instancia.conectado);
+
+      return bateBusca && bateStatus;
+    });
+  }, [instancias, buscaInstancia, filtroStatusInstancia]);
+
+  const totalPaginasInstancias = Math.max(
+    1,
+    Math.ceil(instanciasFiltradas.length / porPagina)
+  );
+
+  const instanciasPaginadas = instanciasFiltradas.slice(
+    (paginaInstancias - 1) * porPagina,
+    paginaInstancias * porPagina
+  );
+
+  useEffect(() => {
+    setPaginaClientes(1);
+  }, [buscaCliente, filtroStatusCliente]);
+
+  useEffect(() => {
+    setPaginaInstancias(1);
+  }, [buscaInstancia, filtroStatusInstancia]);
+
   if (!logado) {
     return (
       <main className="min-h-screen bg-black text-white flex items-center justify-center">
@@ -160,7 +244,25 @@ export default function AdminPage() {
 
   return (
     <main className="min-h-screen bg-black text-white p-6">
-      <h1 className="text-3xl font-bold mb-8">Painel Admin</h1>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+        <div>
+          <h1 className="text-3xl font-bold">Painel Admin</h1>
+          <p className="text-gray-400 text-sm mt-1">
+            Gestão de clientes, planos, instâncias e pagamentos.
+          </p>
+        </div>
+
+        <button
+          onClick={async () => {
+            await recarregarDados();
+            await carregarDashboard();
+            await carregarInstancias();
+          }}
+          className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-5 py-3 rounded-lg font-semibold"
+        >
+          Atualizar painel
+        </button>
+      </div>
 
       {dashboard && (
         <section className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10">
@@ -240,7 +342,34 @@ export default function AdminPage() {
       </section>
 
       <section className="mb-10">
-        <h2 className="text-2xl font-bold mb-4">Clientes</h2>
+        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
+          <div>
+            <h2 className="text-2xl font-bold">Clientes</h2>
+            <p className="text-gray-400 text-sm">
+              Exibindo {clientesPaginados.length} de {clientesFiltrados.length} clientes.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full md:w-auto">
+            <input
+              value={buscaCliente}
+              onChange={(e) => setBuscaCliente(e.target.value)}
+              placeholder="Pesquisar cliente, email, telefone..."
+              className="p-3 rounded bg-zinc-800 border border-zinc-700 min-w-[280px]"
+            />
+
+            <select
+              value={filtroStatusCliente}
+              onChange={(e) => setFiltroStatusCliente(e.target.value)}
+              className="p-3 rounded bg-zinc-800 border border-zinc-700"
+            >
+              <option value="todos">Todos os status</option>
+              <option value="ativo">Ativo</option>
+              <option value="vencido">Vencido</option>
+              <option value="aguardando_pagamento">Aguardando pagamento</option>
+            </select>
+          </div>
+        </div>
 
         <div className="overflow-x-auto bg-zinc-900 border border-zinc-700 rounded-xl">
           <table className="w-full text-sm">
@@ -258,13 +387,15 @@ export default function AdminPage() {
             </thead>
 
             <tbody>
-              {clientes.map((cliente) => (
+              {clientesPaginados.map((cliente) => (
                 <tr key={cliente.id} className="border-b border-zinc-800 align-top">
                   <td className="p-3">{cliente.nome}</td>
                   <td className="p-3">{cliente.email}</td>
                   <td className="p-3">{cliente.telefone || "-"}</td>
                   <td className="p-3">{cliente.plano_id}</td>
-                  <td className="p-3">{cliente.status}</td>
+                  <td className="p-3">
+                    <StatusBadge status={cliente.status} />
+                  </td>
                   <td className="p-3">
                     {cliente.data_expiracao
                       ? new Date(cliente.data_expiracao).toLocaleDateString("pt-BR")
@@ -312,16 +443,56 @@ export default function AdminPage() {
                   </td>
                 </tr>
               ))}
+
+              {clientesPaginados.length === 0 && (
+                <tr>
+                  <td className="p-5 text-center text-gray-400" colSpan={8}>
+                    Nenhum cliente encontrado.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
+
+        <Paginacao
+          pagina={paginaClientes}
+          totalPaginas={totalPaginasClientes}
+          setPagina={setPaginaClientes}
+        />
       </section>
 
       <section>
-        <h2 className="text-2xl font-bold mb-4">Instâncias em Tempo Real</h2>
+        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
+          <div>
+            <h2 className="text-2xl font-bold">Instâncias em Tempo Real</h2>
+            <p className="text-gray-400 text-sm">
+              Exibindo {instanciasPaginadas.length} de {instanciasFiltradas.length} instâncias.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full md:w-auto">
+            <input
+              value={buscaInstancia}
+              onChange={(e) => setBuscaInstancia(e.target.value)}
+              placeholder="Pesquisar instância, número, nome..."
+              className="p-3 rounded bg-zinc-800 border border-zinc-700 min-w-[280px]"
+            />
+
+            <select
+              value={filtroStatusInstancia}
+              onChange={(e) => setFiltroStatusInstancia(e.target.value)}
+              className="p-3 rounded bg-zinc-800 border border-zinc-700"
+            >
+              <option value="todos">Todas</option>
+              <option value="conectado">Conectadas</option>
+              <option value="desconectado">Desconectadas</option>
+            </select>
+          </div>
+        </div>
 
         <div className="grid gap-4">
-          {instancias.map((instancia, index) => (
+          {instanciasPaginadas.map((instancia, index) => (
             <div
               key={index}
               className={`rounded-xl border p-4 ${
@@ -358,7 +529,19 @@ export default function AdminPage() {
               )}
             </div>
           ))}
+
+          {instanciasPaginadas.length === 0 && (
+            <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 text-center text-gray-400">
+              Nenhuma instância encontrada.
+            </div>
+          )}
         </div>
+
+        <Paginacao
+          pagina={paginaInstancias}
+          totalPaginas={totalPaginasInstancias}
+          setPagina={setPaginaInstancias}
+        />
       </section>
     </main>
   );
@@ -369,6 +552,55 @@ function Card({ titulo, valor }: { titulo: string; valor: any }) {
     <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5">
       <p className="text-gray-400 text-sm">{titulo}</p>
       <p className="text-2xl font-bold mt-2">{valor}</p>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const cor =
+    status === "ativo"
+      ? "bg-green-900/40 text-green-400 border-green-700"
+      : status === "vencido"
+      ? "bg-red-900/40 text-red-400 border-red-700"
+      : "bg-yellow-900/40 text-yellow-400 border-yellow-700";
+
+  return (
+    <span className={`px-3 py-1 rounded-full border text-xs font-bold ${cor}`}>
+      {status}
+    </span>
+  );
+}
+
+function Paginacao({
+  pagina,
+  totalPaginas,
+  setPagina,
+}: {
+  pagina: number;
+  totalPaginas: number;
+  setPagina: (pagina: number) => void;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-3 mt-5">
+      <button
+        onClick={() => setPagina(Math.max(1, pagina - 1))}
+        disabled={pagina <= 1}
+        className="px-4 py-2 rounded bg-zinc-800 border border-zinc-700 disabled:opacity-40"
+      >
+        Anterior
+      </button>
+
+      <span className="text-gray-300 text-sm">
+        Página {pagina} de {totalPaginas}
+      </span>
+
+      <button
+        onClick={() => setPagina(Math.min(totalPaginas, pagina + 1))}
+        disabled={pagina >= totalPaginas}
+        className="px-4 py-2 rounded bg-zinc-800 border border-zinc-700 disabled:opacity-40"
+      >
+        Próxima
+      </button>
     </div>
   );
 }
