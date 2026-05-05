@@ -6,6 +6,7 @@ export default function ClientePage() {
   const [qr, setQr] = useState<string | null>(null);
   const [instanceName, setInstanceName] = useState("");
   const [clienteId, setClienteId] = useState("");
+  const [clienteNome, setClienteNome] = useState("");
   const [status, setStatus] = useState("Preparando área do cliente...");
   const [conectado, setConectado] = useState(false);
   const [bloqueado, setBloqueado] = useState(false);
@@ -17,16 +18,22 @@ export default function ClientePage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const id = params.get("cliente");
+    const idUrl = params.get("cliente");
+    const idStorage = localStorage.getItem("clienteId");
+
+    const id = idUrl || idStorage;
 
     if (!id) {
-      setStatus("Cliente não informado.");
+      window.location.href = "/login";
       return;
     }
+
+    const nome = localStorage.getItem("clienteNome") || "";
 
     const instance = `cliente_${id.replace(/-/g, "")}`;
 
     setClienteId(id);
+    setClienteNome(nome);
     setInstanceName(instance);
 
     iniciar(id, instance);
@@ -210,6 +217,13 @@ export default function ClientePage() {
     }
   }
 
+  function sair() {
+    localStorage.removeItem("clienteId");
+    localStorage.removeItem("clienteNome");
+    localStorage.removeItem("clienteEmail");
+    window.location.href = "/login";
+  }
+
   if (bloqueado) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-black text-white px-6">
@@ -228,6 +242,13 @@ export default function ClientePage() {
           >
             Renovar plano
           </a>
+
+          <button
+            onClick={sair}
+            className="mt-3 w-full bg-zinc-800 hover:bg-zinc-700 text-white py-3 rounded-lg font-semibold"
+          >
+            Sair
+          </button>
         </div>
       </main>
     );
@@ -236,7 +257,21 @@ export default function ClientePage() {
   return (
     <main className="min-h-screen flex items-center justify-center bg-black text-white px-6">
       <div className="bg-zinc-900 border border-zinc-700 p-8 rounded-2xl text-center w-full max-w-md">
-        <h1 className="text-2xl font-bold mb-4">Área do Cliente</h1>
+        <div className="flex items-center justify-between mb-5">
+          <div className="text-left">
+            <h1 className="text-2xl font-bold">Área do Cliente</h1>
+            {clienteNome && (
+              <p className="text-sm text-gray-400 mt-1">{clienteNome}</p>
+            )}
+          </div>
+
+          <button
+            onClick={sair}
+            className="bg-zinc-800 hover:bg-zinc-700 px-3 py-2 rounded text-sm"
+          >
+            Sair
+          </button>
+        </div>
 
         <p className="text-gray-300 text-sm mb-6">{status}</p>
 
