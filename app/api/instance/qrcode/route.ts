@@ -27,61 +27,44 @@ export async function POST(req: Request) {
 
     const instanceName = instancia.instance_name;
 
-    // 🔥 INICIA CONEXÃO
-    await axios.post(
+    const { data } = await axios.get(
       `${process.env.EVOLUTION_API_URL}/instance/connect/${instanceName}`,
-      {},
       {
         headers: {
           apikey: process.env.EVOLUTION_API_KEY!,
+          Authorization: `Bearer ${process.env.EVOLUTION_API_KEY!}`,
         },
       }
     );
-
-    // 🔥 ESPERA UM POUCO (ESSENCIAL)
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-
-    // 🔥 PEGA QR
-    const response = await axios.get(
-      `${process.env.EVOLUTION_API_URL}/instance/qrcode/${instanceName}`,
-      {
-        headers: {
-          apikey: process.env.EVOLUTION_API_KEY!,
-        },
-      }
-    );
-
-    const data = response.data;
 
     console.log("QR RAW:", data);
 
-    // 🔥 TRATA TODOS OS FORMATOS POSSÍVEIS
     let base64 =
       data?.base64 ||
       data?.qrcode?.base64 ||
-      data?.qr ||
-      data?.qrcode;
+      data?.qrcode ||
+      data?.qr;
 
-    if (!base64) {
+    if (!base64 || base64 === true) {
       return NextResponse.json({
-        error: "QR ainda não disponível, tente novamente",
+        error: "QR ainda não disponível, clique novamente em alguns segundos",
       });
     }
 
-    // 🔥 GARANTE FORMATO IMG
     if (!base64.startsWith("data:image")) {
       base64 = `data:image/png;base64,${base64}`;
     }
 
     return NextResponse.json({
       qrcode: base64,
+      instanceName,
     });
   } catch (error: any) {
     console.log("ERRO QR:", error.response?.data || error.message);
 
     return NextResponse.json(
       {
-        error: true,
+        error: "Erro ao gerar QR Code",
         detalhe: error.response?.data || error.message,
       },
       { status: 500 }
