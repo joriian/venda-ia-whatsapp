@@ -1,58 +1,59 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import axios from "axios";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const hoje = new Date();
-    const daqui3dias = new Date();
-    daqui3dias.setDate(hoje.getDate() + 3);
+    const url = new URL(req.url);
+    const secret = url.searchParams.get("secret");
 
-    const { data: clientes } = await supabase
-      .from("clientes_ia_whatsapp")
-      .select("*")
-      .eq("status", "ativo");
-
-    for (const cliente of clientes || []) {
-      if (!cliente.data_expiracao) continue;
-
-      const exp = new Date(cliente.data_expiracao);
-
-      const diff =
-        Math.ceil((exp.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
-
-      if (diff <= 3 && diff > 0) {
-        const instanceName = `cliente_${cliente.id}`.replace(/-/g, "");
-
-        try {
-          await axios.post(
-            `${process.env.EVOLUTION_API_URL}/message/sendText/${instanceName}`,
-            {
-              number: cliente.telefone,
-              text: `⚠️ Seu plano vence em ${diff} dia(s). Renove para não perder o acesso.`,
-            },
-            {
-              headers: {
-                apikey: process.env.EVOLUTION_API_KEY!,
-              },
-            }
-          );
-
-          console.log("Aviso enviado:", cliente.telefone);
-        } catch (err) {
-          console.log("Erro ao enviar aviso:", cliente.telefone);
-        }
-      }
+    // 🔒 proteção
+    if (secret !== process.env.CRON_SECRET) {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
     }
 
-    return NextResponse.json({ ok: true });
+    console.log("CRON: verificando vencimentos...");
+
+    const hoje = new Date().toISOString();
+
+    const { data: clientes, error } = await supabase
+      .from("clientes_ia_whatsapp")
+      .select("*")
+      .lt("data_expiracao", hoje)
+      .eq("status", "ativo");
+
+    if (error) {
+      console.log("ERRO CRON:", error);
+      return NextResponse.json({ error: true });
+    }
+
+    if (!clientes || clientes.length === 0) {
+      console.log("CRON: nenhum cliente vencido");
+      return NextResponse.json({ ok: true, clientes: 0 });
+    }
+
+    for (const cliente of clientes) {
+      console.log("EXPIRANDO:", cliente.id);
+
+      await supabase
+        .from("clientes_ia_whatsapp")
+        .update({
+          status: "inativo",
+        })
+        .eq("id", cliente.id);
+    }
+
+    return NextResponse.json({
+      ok: true,
+      clientes_expirados: clientes.length,
+    });
   } catch (error: any) {
     console.log("ERRO CRON:", error.message);
-    return NextResponse.json({ error: true }, { status: 500 });
+
+    return NextResponse.json({ error: true });
   }
 }
