@@ -7,17 +7,9 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export async function POST(req: Request) {
   try {
     const { clienteId } = await req.json();
-
-    if (!clienteId) {
-      return NextResponse.json({ error: "clienteId obrigatório" }, { status: 400 });
-    }
 
     const { data: instancia } = await supabase
       .from("instancias_evolution")
@@ -31,55 +23,56 @@ export async function POST(req: Request) {
 
     const instanceName = instancia.instance_name;
 
-    let base64 = null;
-
-    // 🔥 TENTA PEGAR QR DIRETO
-    for (let i = 0; i < 10; i++) {
-      const response = await axios.get(
-        `${process.env.EVOLUTION_API_URL}/instance/qrcode/${instanceName}`,
-        {
-          headers: {
-            apikey: process.env.EVOLUTION_API_KEY!,
-          },
-        }
-      );
-
-      const data = response.data;
-
-      console.log("QR RAW:", data);
-
-      base64 =
-        data?.base64 ||
-        data?.qrcode?.base64 ||
-        data?.qrcode ||
-        data?.qr;
-
-      if (base64 && base64 !== true) {
-        break;
+    // 🔥 PEGA STATUS DA INSTÂNCIA
+    const { data } = await axios.get(
+      `${process.env.EVOLUTION_API_URL}/instance/fetchInstances`,
+      {
+        headers: {
+          apikey: process.env.EVOLUTION_API_KEY!,
+        },
       }
+    );
 
-      await sleep(2000);
-    }
+    const instance = data.find(
+      (i: any) => i.instanceName === instanceName
+    );
 
-    if (!base64 || base64 === true) {
+    if (!instance) {
       return NextResponse.json({
-        error: "QR ainda não gerado, aguarde alguns segundos",
+        error: "Instância não encontrada na Evolution",
       });
     }
 
-    if (!base64.startsWith("data:image")) {
-      base64 = `data:image/png;base64,${base64}`;
+    // 🔥 SE JÁ ESTÁ CONECTADO
+    if (instance.state === "open") {
+      return NextResponse.json({
+        conectado: true,
+        numero: instance.owner || null,
+      });
+    }
+
+    // 🔥 SE NÃO ESTÁ CONECTADO → PEGA QR
+    if (instance.qrcode) {
+      let base64 = instance.qrcode;
+
+      if (!base64.startsWith("data:image")) {
+        base64 = `data:image/png;base64,${base64}`;
+      }
+
+      return NextResponse.json({
+        qrcode: base64,
+      });
     }
 
     return NextResponse.json({
-      qrcode: base64,
+      error: "QR ainda não disponível",
     });
   } catch (error: any) {
     console.log("ERRO QR:", error.response?.data || error.message);
 
     return NextResponse.json(
       {
-        error: "Erro ao gerar QR Code",
+        error: "Erro ao buscar status",
         detalhe: error.response?.data || error.message,
       },
       { status: 500 }
