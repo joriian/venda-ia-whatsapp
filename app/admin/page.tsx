@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 
 export default function AdminPage() {
-  const [senha, setSenha] = useState("");
-  const [logado, setLogado] = useState(false);
+  const [admin, setAdmin] = useState<any>(null);
+  const [adminToken, setAdminToken] = useState("");
+  const [carregandoSessao, setCarregandoSessao] = useState(true);
+
   const [planos, setPlanos] = useState<any[]>([]);
   const [clientes, setClientes] = useState<any[]>([]);
   const [instancias, setInstancias] = useState<any[]>([]);
@@ -21,34 +23,85 @@ export default function AdminPage() {
 
   const porPagina = 10;
 
-  async function entrar() {
-    const res = await fetch("/api/admin/dados", {
-      headers: { "x-admin-password": senha },
-    });
+  useEffect(() => {
+    iniciarAdmin();
+  }, []);
 
-    if (!res.ok) {
-      alert("Senha incorreta");
+  async function iniciarAdmin() {
+    const token = localStorage.getItem("adminToken");
+
+    if (!token) {
+      window.location.href = "/admin/login";
       return;
     }
 
-    const data = await res.json();
+    try {
+      const res = await fetch("/api/admin/sessao", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ token }),
+      });
 
-    setPlanos(data.planos || []);
-    setClientes(data.clientes || []);
-    setLogado(true);
+      const data = await res.json();
 
-    carregarDashboard();
-    carregarInstancias();
+      if (!res.ok || data.error) {
+        limparSessaoAdmin();
+        window.location.href = "/admin/login";
+        return;
+      }
 
-    setInterval(() => {
-      carregarDashboard();
-      carregarInstancias();
-    }, 5000);
+      setAdmin(data.admin);
+      setAdminToken(token);
+
+      await carregarTudo(token);
+
+      const interval = setInterval(() => {
+        carregarDashboard(token);
+        carregarInstancias();
+      }, 5000);
+
+      return () => clearInterval(interval);
+    } catch (error) {
+      console.error(error);
+      limparSessaoAdmin();
+      window.location.href = "/admin/login";
+    } finally {
+      setCarregandoSessao(false);
+    }
   }
 
-  async function recarregarDados() {
+  function podeEditarPlanos() {
+    return admin?.nivel === "dono" || admin?.nivel === "admin";
+  }
+
+  function podeBloquearReativar() {
+    return admin?.nivel === "dono" || admin?.nivel === "admin";
+  }
+
+  function podeFinanceiro() {
+    return (
+      admin?.nivel === "dono" ||
+      admin?.nivel === "admin" ||
+      admin?.nivel === "financeiro"
+    );
+  }
+
+  async function carregarTudo(token: string) {
+    await recarregarDados(token);
+    await carregarDashboard(token);
+    await carregarInstancias();
+  }
+
+  async function recarregarDados(tokenParam?: string) {
+    const token = tokenParam || adminToken;
+
     const res = await fetch("/api/admin/dados", {
-      headers: { "x-admin-password": senha },
+      headers: {
+        "x-admin-password": process.env.NEXT_PUBLIC_ADMIN_LEGACY || "",
+        "x-admin-token": token,
+      },
     });
 
     if (res.ok) {
@@ -58,13 +111,20 @@ export default function AdminPage() {
     }
   }
 
-  async function carregarDashboard() {
+  async function carregarDashboard(tokenParam?: string) {
+    const token = tokenParam || adminToken;
+
     const res = await fetch("/api/admin/dashboard", {
-      headers: { "x-admin-password": senha },
+      headers: {
+        "x-admin-password": process.env.NEXT_PUBLIC_ADMIN_LEGACY || "",
+        "x-admin-token": token,
+      },
     });
 
-    const data = await res.json();
-    setDashboard(data);
+    if (res.ok) {
+      const data = await res.json();
+      setDashboard(data);
+    }
   }
 
   async function carregarInstancias() {
@@ -77,13 +137,19 @@ export default function AdminPage() {
   }
 
   async function salvarPlano(plano: any) {
+    if (!podeEditarPlanos()) {
+      alert("Seu nível de acesso não permite alterar planos.");
+      return;
+    }
+
     setLoading(true);
 
     const res = await fetch("/api/admin/planos", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-admin-password": senha,
+        "x-admin-password": process.env.NEXT_PUBLIC_ADMIN_LEGACY || "",
+        "x-admin-token": adminToken,
       },
       body: JSON.stringify(plano),
     });
@@ -99,6 +165,16 @@ export default function AdminPage() {
   }
 
   async function acaoCliente(id: string, acao: string) {
+    if ((acao === "bloquear" || acao === "reativar") && !podeBloquearReativar()) {
+      alert("Seu nível de acesso não permite bloquear ou reativar clientes.");
+      return;
+    }
+
+    if ((acao === "gerar_link" || acao === "cobrar") && !podeFinanceiro()) {
+      alert("Seu nível de acesso não permite ações financeiras.");
+      return;
+    }
+
     const confirmar =
       acao === "bloquear"
         ? confirm("Tem certeza que deseja bloquear este cliente?")
@@ -110,7 +186,8 @@ export default function AdminPage() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-admin-password": senha,
+        "x-admin-password": process.env.NEXT_PUBLIC_ADMIN_LEGACY || "",
+        "x-admin-token": adminToken,
       },
       body: JSON.stringify({
         cliente_id: id,
@@ -121,7 +198,7 @@ export default function AdminPage() {
     const data = await res.json();
 
     if (!res.ok || data.error) {
-      alert("Erro ao executar ação");
+      alert(data.detalhe || data.error || "Erro ao executar ação");
       return;
     }
 
@@ -134,6 +211,29 @@ export default function AdminPage() {
     await recarregarDados();
     await carregarDashboard();
     await carregarInstancias();
+  }
+
+  async function sair() {
+    try {
+      await fetch("/api/admin/logout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ token: adminToken }),
+      });
+    } catch {}
+
+    limparSessaoAdmin();
+    window.location.href = "/admin/login";
+  }
+
+  function limparSessaoAdmin() {
+    localStorage.removeItem("adminToken");
+    localStorage.removeItem("adminNome");
+    localStorage.removeItem("adminEmail");
+    localStorage.removeItem("adminNivel");
+    localStorage.removeItem("adminSessaoExpira");
   }
 
   function dinheiro(valor: number) {
@@ -217,27 +317,10 @@ export default function AdminPage() {
     setPaginaInstancias(1);
   }, [buscaInstancia, filtroStatusInstancia]);
 
-  if (!logado) {
+  if (carregandoSessao) {
     return (
       <main className="min-h-screen bg-black text-white flex items-center justify-center">
-        <div className="bg-zinc-900 p-8 rounded-2xl w-full max-w-sm">
-          <h1 className="text-2xl font-bold mb-5">Painel Admin</h1>
-
-          <input
-            type="password"
-            placeholder="Senha do admin"
-            value={senha}
-            onChange={(e) => setSenha(e.target.value)}
-            className="w-full p-3 rounded bg-zinc-800 border border-zinc-700 mb-4"
-          />
-
-          <button
-            onClick={entrar}
-            className="w-full bg-green-600 hover:bg-green-700 py-3 rounded font-bold"
-          >
-            Entrar
-          </button>
-        </div>
+        <p className="text-gray-400">Validando sessão...</p>
       </main>
     );
   }
@@ -248,20 +331,25 @@ export default function AdminPage() {
         <div>
           <h1 className="text-3xl font-bold">Painel Admin</h1>
           <p className="text-gray-400 text-sm mt-1">
-            Gestão de clientes, planos, instâncias e pagamentos.
+            Logado como {admin?.nome} — nível: {admin?.nivel}
           </p>
         </div>
 
-        <button
-          onClick={async () => {
-            await recarregarDados();
-            await carregarDashboard();
-            await carregarInstancias();
-          }}
-          className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-5 py-3 rounded-lg font-semibold"
-        >
-          Atualizar painel
-        </button>
+        <div className="flex gap-3 flex-wrap">
+          <button
+            onClick={async () => carregarTudo(adminToken)}
+            className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-5 py-3 rounded-lg font-semibold"
+          >
+            Atualizar painel
+          </button>
+
+          <button
+            onClick={sair}
+            className="bg-red-600 hover:bg-red-700 px-5 py-3 rounded-lg font-semibold"
+          >
+            Sair
+          </button>
+        </div>
       </div>
 
       {dashboard && (
@@ -277,69 +365,71 @@ export default function AdminPage() {
         </section>
       )}
 
-      <section className="mb-10">
-        <h2 className="text-2xl font-bold mb-4">Planos</h2>
+      {podeEditarPlanos() && (
+        <section className="mb-10">
+          <h2 className="text-2xl font-bold mb-4">Planos</h2>
 
-        <div className="grid gap-4">
-          {planos.map((plano, index) => (
-            <div
-              key={plano.id}
-              className="bg-zinc-900 border border-zinc-700 rounded-xl p-4 grid grid-cols-1 md:grid-cols-5 gap-3 items-center"
-            >
-              <input
-                value={plano.nome}
-                onChange={(e) => {
-                  const novo = [...planos];
-                  novo[index].nome = e.target.value;
-                  setPlanos(novo);
-                }}
-                className="p-3 rounded bg-zinc-800 border border-zinc-700"
-              />
-
-              <input
-                value={plano.valor}
-                onChange={(e) => {
-                  const novo = [...planos];
-                  novo[index].valor = e.target.value;
-                  setPlanos(novo);
-                }}
-                className="p-3 rounded bg-zinc-800 border border-zinc-700"
-              />
-
-              <input
-                value={plano.meses}
-                onChange={(e) => {
-                  const novo = [...planos];
-                  novo[index].meses = Number(e.target.value);
-                  setPlanos(novo);
-                }}
-                className="p-3 rounded bg-zinc-800 border border-zinc-700"
-              />
-
-              <label className="flex gap-2 items-center">
+          <div className="grid gap-4">
+            {planos.map((plano, index) => (
+              <div
+                key={plano.id}
+                className="bg-zinc-900 border border-zinc-700 rounded-xl p-4 grid grid-cols-1 md:grid-cols-5 gap-3 items-center"
+              >
                 <input
-                  type="checkbox"
-                  checked={plano.ativo}
+                  value={plano.nome}
                   onChange={(e) => {
                     const novo = [...planos];
-                    novo[index].ativo = e.target.checked;
+                    novo[index].nome = e.target.value;
                     setPlanos(novo);
                   }}
+                  className="p-3 rounded bg-zinc-800 border border-zinc-700"
                 />
-                Ativo
-              </label>
 
-              <button
-                onClick={() => salvarPlano(plano)}
-                disabled={loading}
-                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 py-3 rounded font-bold"
-              >
-                Salvar
-              </button>
-            </div>
-          ))}
-        </div>
-      </section>
+                <input
+                  value={plano.valor}
+                  onChange={(e) => {
+                    const novo = [...planos];
+                    novo[index].valor = e.target.value;
+                    setPlanos(novo);
+                  }}
+                  className="p-3 rounded bg-zinc-800 border border-zinc-700"
+                />
+
+                <input
+                  value={plano.meses}
+                  onChange={(e) => {
+                    const novo = [...planos];
+                    novo[index].meses = Number(e.target.value);
+                    setPlanos(novo);
+                  }}
+                  className="p-3 rounded bg-zinc-800 border border-zinc-700"
+                />
+
+                <label className="flex gap-2 items-center">
+                  <input
+                    type="checkbox"
+                    checked={plano.ativo}
+                    onChange={(e) => {
+                      const novo = [...planos];
+                      novo[index].ativo = e.target.checked;
+                      setPlanos(novo);
+                    }}
+                  />
+                  Ativo
+                </label>
+
+                <button
+                  onClick={() => salvarPlano(plano)}
+                  disabled={loading}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 py-3 rounded font-bold"
+                >
+                  Salvar
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="mb-10">
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
@@ -412,33 +502,41 @@ export default function AdminPage() {
                   </td>
                   <td className="p-3">
                     <div className="flex gap-2 flex-wrap">
-                      <button
-                        onClick={() => acaoCliente(cliente.id, "bloquear")}
-                        className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded"
-                      >
-                        Bloquear
-                      </button>
+                      {podeBloquearReativar() && (
+                        <>
+                          <button
+                            onClick={() => acaoCliente(cliente.id, "bloquear")}
+                            className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded"
+                          >
+                            Bloquear
+                          </button>
 
-                      <button
-                        onClick={() => acaoCliente(cliente.id, "reativar")}
-                        className="bg-green-600 hover:bg-green-700 px-3 py-1 rounded"
-                      >
-                        Reativar
-                      </button>
+                          <button
+                            onClick={() => acaoCliente(cliente.id, "reativar")}
+                            className="bg-green-600 hover:bg-green-700 px-3 py-1 rounded"
+                          >
+                            Reativar
+                          </button>
+                        </>
+                      )}
 
-                      <button
-                        onClick={() => acaoCliente(cliente.id, "gerar_link")}
-                        className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded"
-                      >
-                        Link
-                      </button>
+                      {podeFinanceiro() && (
+                        <>
+                          <button
+                            onClick={() => acaoCliente(cliente.id, "gerar_link")}
+                            className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded"
+                          >
+                            Link
+                          </button>
 
-                      <button
-                        onClick={() => acaoCliente(cliente.id, "cobrar")}
-                        className="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded"
-                      >
-                        Cobrar
-                      </button>
+                          <button
+                            onClick={() => acaoCliente(cliente.id, "cobrar")}
+                            className="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded"
+                          >
+                            Cobrar
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -507,11 +605,7 @@ export default function AdminPage() {
 
               <p>
                 <strong>Status:</strong>{" "}
-                <span
-                  className={
-                    instancia.conectado ? "text-green-400" : "text-red-400"
-                  }
-                >
+                <span className={instancia.conectado ? "text-green-400" : "text-red-400"}>
                   {instancia.conectado ? "CONECTADO" : "DESCONECTADO"}
                 </span>
               </p>
