@@ -6,61 +6,91 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+async function validarAdmin(req: Request) {
+  const token = req.headers.get("x-admin-token");
+
+  if (!token) return null;
+
+  const { data: admin } = await supabase
+    .from("admin_users")
+    .select("*")
+    .eq("session_token", token)
+    .eq("ativo", true)
+    .maybeSingle();
+
+  if (!admin) return null;
+
+  const expira = admin.session_expires_at
+    ? new Date(admin.session_expires_at)
+    : null;
+
+  if (!expira || expira < new Date()) return null;
+
+  return admin;
+}
+
 export async function GET(req: Request) {
-  const senha = req.headers.get("x-admin-password");
+  try {
+    const admin = await validarAdmin(req);
 
-  if (senha !== process.env.ADMIN_PASSWORD) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-  }
+    if (!admin) {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    }
 
-  const { data: clientes } = await supabase
-    .from("clientes_ia_whatsapp")
-    .select("*");
+    const { data: clientes } = await supabase
+      .from("clientes_ia_whatsapp")
+      .select("*");
 
-  const { data: pagamentos } = await supabase
-    .from("pagamentos_ia_whatsapp")
-    .select("*");
+    const { data: pagamentos } = await supabase
+      .from("pagamentos_ia_whatsapp")
+      .select("*");
 
-  const hoje = new Date();
+    const hoje = new Date();
 
-  const ativos = clientes?.filter((c) => c.status === "ativo").length || 0;
-  const vencidos = clientes?.filter((c) => c.status === "vencido").length || 0;
-  const aguardando =
-    clientes?.filter((c) => c.status === "aguardando_pagamento").length || 0;
+    const ativos = clientes?.filter((c) => c.status === "ativo").length || 0;
+    const vencidos = clientes?.filter((c) => c.status === "vencido").length || 0;
+    const aguardando =
+      clientes?.filter((c) => c.status === "aguardando_pagamento").length || 0;
 
-  const vencendo = clientes?.filter((c) => {
-    if (!c.data_expiracao || c.status !== "ativo") return false;
+    const vencendo =
+      clientes?.filter((c) => {
+        if (!c.data_expiracao || c.status !== "ativo") return false;
 
-    const exp = new Date(c.data_expiracao);
-    const diff = Math.ceil(
-      (exp.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24)
-    );
-
-    return diff <= 3 && diff > 0;
-  }).length || 0;
-
-  const receitaTotal =
-    pagamentos?.reduce((total, p) => total + Number(p.valor || 0), 0) || 0;
-
-  const receitaMes =
-    pagamentos
-      ?.filter((p) => {
-        const data = new Date(p.created_at || p.criado_em || Date.now());
-        return (
-          data.getMonth() === hoje.getMonth() &&
-          data.getFullYear() === hoje.getFullYear()
+        const exp = new Date(c.data_expiracao);
+        const diff = Math.ceil(
+          (exp.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24)
         );
-      })
-      .reduce((total, p) => total + Number(p.valor || 0), 0) || 0;
 
-  return NextResponse.json({
-    clientes_total: clientes?.length || 0,
-    ativos,
-    vencidos,
-    aguardando,
-    vencendo,
-    pagamentos_total: pagamentos?.length || 0,
-    receita_total: receitaTotal,
-    receita_mes: receitaMes,
-  });
+        return diff <= 3 && diff > 0;
+      }).length || 0;
+
+    const receitaTotal =
+      pagamentos?.reduce((total, p) => total + Number(p.valor || 0), 0) || 0;
+
+    const receitaMes =
+      pagamentos
+        ?.filter((p) => {
+          const data = new Date(p.created_at || p.criado_em || Date.now());
+
+          return (
+            data.getMonth() === hoje.getMonth() &&
+            data.getFullYear() === hoje.getFullYear()
+          );
+        })
+        .reduce((total, p) => total + Number(p.valor || 0), 0) || 0;
+
+    return NextResponse.json({
+      clientes_total: clientes?.length || 0,
+      ativos,
+      vencidos,
+      aguardando,
+      vencendo,
+      pagamentos_total: pagamentos?.length || 0,
+      receita_total: receitaTotal,
+      receita_mes: receitaMes,
+    });
+  } catch (error: any) {
+    console.log("ERRO ADMIN DASHBOARD:", error.message);
+    return NextResponse.json({ error: true }, { status: 500 });
+  }
 }
