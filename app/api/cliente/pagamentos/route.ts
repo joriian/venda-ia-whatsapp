@@ -14,23 +14,45 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Cliente obrigatório" }, { status: 400 });
     }
 
-    const { data: pagamentos, error } = await supabase
+    const { data, error } = await supabase
       .from("pagamentos_ia_whatsapp")
       .select("*")
-      .eq("cliente_id", clienteId)
-      .order("created_at", { ascending: false });
+      .eq("cliente_id", clienteId);
 
     if (error) {
-      console.log("ERRO PAGAMENTOS CLIENTE:", error);
-      return NextResponse.json({ error: true }, { status: 500 });
+      console.log("ERRO BUSCAR PAGAMENTOS:", error);
+      return NextResponse.json(
+        { error: "Erro ao buscar pagamentos", detalhe: error },
+        { status: 500 }
+      );
     }
+
+    const pagamentos = (data || []).sort((a: any, b: any) => {
+      const dataA = new Date(
+        a.created_at || a.criado_em || a.data_criacao || 0
+      ).getTime();
+
+      const dataB = new Date(
+        b.created_at || b.criado_em || b.data_criacao || 0
+      ).getTime();
+
+      return dataB - dataA;
+    });
 
     return NextResponse.json({
       ok: true,
-      pagamentos: pagamentos || [],
+      pagamentos,
+      total: pagamentos.length,
     });
   } catch (error: any) {
     console.log("ERRO CLIENTE PAGAMENTOS:", error.message);
-    return NextResponse.json({ error: true }, { status: 500 });
+
+    return NextResponse.json(
+      {
+        error: true,
+        detalhe: error.message,
+      },
+      { status: 500 }
+    );
   }
 }
