@@ -36,6 +36,18 @@ export default function AdminPage() {
     }, 5000);
   }
 
+  async function recarregarDados() {
+    const res = await fetch("/api/admin/dados", {
+      headers: { "x-admin-password": senha },
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      setPlanos(data.planos || []);
+      setClientes(data.clientes || []);
+    }
+  }
+
   async function carregarDashboard() {
     const res = await fetch("/api/admin/dashboard", {
       headers: { "x-admin-password": senha },
@@ -74,6 +86,44 @@ export default function AdminPage() {
     }
 
     alert("Plano salvo");
+  }
+
+  async function acaoCliente(id: string, acao: string) {
+    const confirmar =
+      acao === "bloquear"
+        ? confirm("Tem certeza que deseja bloquear este cliente?")
+        : true;
+
+    if (!confirmar) return;
+
+    const res = await fetch("/api/admin/cliente-acao", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-password": senha,
+      },
+      body: JSON.stringify({
+        cliente_id: id,
+        acao,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      alert("Erro ao executar ação");
+      return;
+    }
+
+    if (acao === "gerar_link" && data.link) {
+      alert("Link de pagamento:\n" + data.link);
+    } else {
+      alert("Ação realizada com sucesso");
+    }
+
+    await recarregarDados();
+    await carregarDashboard();
+    await carregarInstancias();
   }
 
   function dinheiro(valor: number) {
@@ -203,12 +253,13 @@ export default function AdminPage() {
                 <th className="p-3">Status</th>
                 <th className="p-3">Expira</th>
                 <th className="p-3">Área</th>
+                <th className="p-3">Ações</th>
               </tr>
             </thead>
 
             <tbody>
               {clientes.map((cliente) => (
-                <tr key={cliente.id} className="border-b border-zinc-800">
+                <tr key={cliente.id} className="border-b border-zinc-800 align-top">
                   <td className="p-3">{cliente.nome}</td>
                   <td className="p-3">{cliente.email}</td>
                   <td className="p-3">{cliente.telefone || "-"}</td>
@@ -227,6 +278,37 @@ export default function AdminPage() {
                     >
                       Abrir
                     </a>
+                  </td>
+                  <td className="p-3">
+                    <div className="flex gap-2 flex-wrap">
+                      <button
+                        onClick={() => acaoCliente(cliente.id, "bloquear")}
+                        className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded"
+                      >
+                        Bloquear
+                      </button>
+
+                      <button
+                        onClick={() => acaoCliente(cliente.id, "reativar")}
+                        className="bg-green-600 hover:bg-green-700 px-3 py-1 rounded"
+                      >
+                        Reativar
+                      </button>
+
+                      <button
+                        onClick={() => acaoCliente(cliente.id, "gerar_link")}
+                        className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded"
+                      >
+                        Link
+                      </button>
+
+                      <button
+                        onClick={() => acaoCliente(cliente.id, "cobrar")}
+                        className="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded"
+                      >
+                        Cobrar
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -248,17 +330,32 @@ export default function AdminPage() {
                   : "border-red-600 bg-red-900/20"
               }`}
             >
-              <p><strong>Instância:</strong> {instancia.instance}</p>
+              <p>
+                <strong>Instância:</strong> {instancia.instance}
+              </p>
 
               <p>
                 <strong>Status:</strong>{" "}
-                <span className={instancia.conectado ? "text-green-400" : "text-red-400"}>
+                <span
+                  className={
+                    instancia.conectado ? "text-green-400" : "text-red-400"
+                  }
+                >
                   {instancia.conectado ? "CONECTADO" : "DESCONECTADO"}
                 </span>
               </p>
 
-              {instancia.nome && <p><strong>Nome:</strong> {instancia.nome}</p>}
-              {instancia.numero && <p><strong>Número:</strong> {instancia.numero}</p>}
+              {instancia.nome && (
+                <p>
+                  <strong>Nome:</strong> {instancia.nome}
+                </p>
+              )}
+
+              {instancia.numero && (
+                <p>
+                  <strong>Número:</strong> {instancia.numero}
+                </p>
+              )}
             </div>
           ))}
         </div>
