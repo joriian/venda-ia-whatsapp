@@ -16,15 +16,42 @@ function senhaForte(senha: string) {
   return tamanhoOk && temMaiuscula && temMinuscula && temNumero && temEspecial;
 }
 
+async function validarSessao(clienteId: string, token: string) {
+  if (!clienteId || !token) return false;
+
+  const { data: cliente } = await supabase
+    .from("clientes_ia_whatsapp")
+    .select("*")
+    .eq("id", clienteId)
+    .eq("session_token", token)
+    .maybeSingle();
+
+  if (!cliente) return false;
+
+  const expira = cliente.session_expires_at
+    ? new Date(cliente.session_expires_at)
+    : null;
+
+  if (!expira || expira < new Date()) return false;
+
+  return cliente;
+}
+
 export async function POST(req: Request) {
   try {
-    const { clienteId, senhaAtual, novaSenha } = await req.json();
+    const { clienteId, token, senhaAtual, novaSenha } = await req.json();
 
-    if (!clienteId || !senhaAtual || !novaSenha) {
+    if (!clienteId || !token || !senhaAtual || !novaSenha) {
       return NextResponse.json(
         { error: "Preencha todos os campos" },
         { status: 400 }
       );
+    }
+
+    const cliente = await validarSessao(clienteId, token);
+
+    if (!cliente) {
+      return NextResponse.json({ error: "Sessão inválida" }, { status: 401 });
     }
 
     const novaSenhaTratada = String(novaSenha).trim();
@@ -37,16 +64,6 @@ export async function POST(req: Request) {
         },
         { status: 400 }
       );
-    }
-
-    const { data: cliente } = await supabase
-      .from("clientes_ia_whatsapp")
-      .select("*")
-      .eq("id", clienteId)
-      .single();
-
-    if (!cliente) {
-      return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 });
     }
 
     if (String(cliente.senha || "").trim() !== String(senhaAtual || "").trim()) {

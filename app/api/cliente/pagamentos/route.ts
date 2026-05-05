@@ -6,12 +6,35 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+async function validarSessao(clienteId: string, token: string) {
+  if (!clienteId || !token) return false;
+
+  const { data: cliente } = await supabase
+    .from("clientes_ia_whatsapp")
+    .select("*")
+    .eq("id", clienteId)
+    .eq("session_token", token)
+    .maybeSingle();
+
+  if (!cliente) return false;
+
+  const expira = cliente.session_expires_at
+    ? new Date(cliente.session_expires_at)
+    : null;
+
+  if (!expira || expira < new Date()) return false;
+
+  return true;
+}
+
 export async function POST(req: Request) {
   try {
-    const { clienteId } = await req.json();
+    const { clienteId, token } = await req.json();
 
-    if (!clienteId) {
-      return NextResponse.json({ error: "Cliente obrigatório" }, { status: 400 });
+    const sessaoOk = await validarSessao(clienteId, token);
+
+    if (!sessaoOk) {
+      return NextResponse.json({ error: "Sessão inválida" }, { status: 401 });
     }
 
     const { data, error } = await supabase

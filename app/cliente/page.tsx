@@ -6,6 +6,7 @@ export default function ClientePage() {
   const [qr, setQr] = useState<string | null>(null);
   const [instanceName, setInstanceName] = useState("");
   const [clienteId, setClienteId] = useState("");
+  const [clienteToken, setClienteToken] = useState("");
   const [cliente, setCliente] = useState<any>(null);
   const [plano, setPlano] = useState<any>(null);
   const [pagamentos, setPagamentos] = useState<any[]>([]);
@@ -79,13 +80,14 @@ export default function ClientePage() {
       const instance = `cliente_${id.replace(/-/g, "")}`;
 
       setClienteId(id);
+      setClienteToken(token);
       setInstanceName(instance);
 
       localStorage.setItem("clienteId", id);
       localStorage.setItem("clienteNome", data.nome || "");
       localStorage.setItem("clienteEmail", data.email || "");
 
-      await iniciar(id, instance);
+      await iniciar(id, token, instance);
 
       const interval = setInterval(() => {
         verificarStatus(instance);
@@ -99,11 +101,11 @@ export default function ClientePage() {
     }
   }
 
-  async function iniciar(id: string, instance: string) {
-    await carregarDados(id);
-    await carregarPagamentos(id);
+  async function iniciar(id: string, token: string, instance: string) {
+    await carregarDados(id, token);
+    await carregarPagamentos(id, token);
 
-    const ativo = await validarCliente(id);
+    const ativo = await validarCliente(id, token);
 
     if (!ativo) {
       return;
@@ -112,17 +114,26 @@ export default function ClientePage() {
     await verificarStatus(instance);
   }
 
-  async function carregarDados(id: string) {
+  async function carregarDados(id: string, token: string) {
     try {
       const res = await fetch("/api/cliente/dados", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ clienteId: id }),
+        body: JSON.stringify({
+          clienteId: id,
+          token,
+        }),
       });
 
       const data = await res.json();
+
+      if (res.status === 401) {
+        limparSessaoLocal();
+        window.location.href = "/login";
+        return;
+      }
 
       if (data.ok) {
         setCliente(data.cliente);
@@ -133,17 +144,26 @@ export default function ClientePage() {
     }
   }
 
-  async function carregarPagamentos(id: string) {
+  async function carregarPagamentos(id: string, token: string) {
     try {
       const res = await fetch("/api/cliente/pagamentos", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ clienteId: id }),
+        body: JSON.stringify({
+          clienteId: id,
+          token,
+        }),
       });
 
       const data = await res.json();
+
+      if (res.status === 401) {
+        limparSessaoLocal();
+        window.location.href = "/login";
+        return;
+      }
 
       if (data.ok) {
         setPagamentos(data.pagamentos || []);
@@ -153,17 +173,26 @@ export default function ClientePage() {
     }
   }
 
-  async function validarCliente(id: string) {
+  async function validarCliente(id: string, token: string) {
     try {
       const res = await fetch("/api/cliente/validar", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ clienteId: id }),
+        body: JSON.stringify({
+          clienteId: id,
+          token,
+        }),
       });
 
       const data = await res.json();
+
+      if (res.status === 401) {
+        limparSessaoLocal();
+        window.location.href = "/login";
+        return false;
+      }
 
       if (!data.ativo) {
         setBloqueado(true);
@@ -360,6 +389,13 @@ export default function ClientePage() {
   }
 
   async function alterarSenha() {
+    if (!clienteId || !clienteToken) {
+      alert("Sessão inválida. Faça login novamente.");
+      limparSessaoLocal();
+      window.location.href = "/login";
+      return;
+    }
+
     if (!senhaAtual || !novaSenha || !confirmarSenha) {
       alert("Preencha a senha atual, a nova senha e a confirmação.");
       return;
@@ -387,12 +423,20 @@ export default function ClientePage() {
         },
         body: JSON.stringify({
           clienteId,
+          token: clienteToken,
           senhaAtual,
           novaSenha,
         }),
       });
 
       const data = await res.json();
+
+      if (res.status === 401) {
+        alert(data.error || "Sessão inválida. Faça login novamente.");
+        limparSessaoLocal();
+        window.location.href = "/login";
+        return;
+      }
 
       if (!res.ok || data.error) {
         alert(data.error || "Erro ao alterar senha.");
@@ -694,7 +738,7 @@ export default function ClientePage() {
             </div>
 
             <button
-              onClick={() => carregarPagamentos(clienteId)}
+              onClick={() => carregarPagamentos(clienteId, clienteToken)}
               className="mt-4 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-5 py-3 rounded-lg font-semibold"
             >
               Atualizar histórico
@@ -758,7 +802,7 @@ function Card({ titulo, valor }: { titulo: string; valor: any }) {
   );
 }
 
-function Info({ label, value }: { label: string; value: any }) {
+function Info({ label, value }: { label: any; value: any }) {
   return (
     <div className="flex justify-between border-b border-zinc-800 pb-2">
       <span className="text-gray-400">{label}</span>
