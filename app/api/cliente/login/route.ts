@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import crypto from "crypto";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+function criarToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
 
 export async function POST(req: Request) {
   try {
@@ -38,19 +43,33 @@ export async function POST(req: Request) {
     });
 
     if (!cliente) {
-      console.log("LOGIN NEGADO:", { email, senhaInformada: senha });
       return NextResponse.json(
         { error: "Email ou senha incorretos" },
         { status: 401 }
       );
     }
 
+    const token = criarToken();
+
+    const expires = new Date();
+    expires.setHours(expires.getHours() + 12);
+
+    await supabase
+      .from("clientes_ia_whatsapp")
+      .update({
+        session_token: token,
+        session_expires_at: expires.toISOString(),
+      })
+      .eq("id", cliente.id);
+
     return NextResponse.json({
       ok: true,
+      token,
       clienteId: cliente.id,
       nome: cliente.nome,
       email: cliente.email,
       status: cliente.status,
+      expiresAt: expires.toISOString(),
     });
   } catch (error: any) {
     console.log("ERRO LOGIN CLIENTE:", error.message);
