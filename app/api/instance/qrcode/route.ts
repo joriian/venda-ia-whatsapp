@@ -11,6 +11,13 @@ export async function POST(req: Request) {
   try {
     const { clienteId } = await req.json();
 
+    if (!clienteId) {
+      return NextResponse.json(
+        { error: "clienteId obrigatório" },
+        { status: 400 }
+      );
+    }
+
     const { data: instancia } = await supabase
       .from("instancias_evolution")
       .select("*")
@@ -18,61 +25,100 @@ export async function POST(req: Request) {
       .single();
 
     if (!instancia) {
-      return NextResponse.json({ error: "Instância não encontrada" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Instância não encontrada no banco" },
+        { status: 404 }
+      );
     }
 
     const instanceName = instancia.instance_name;
 
-    // 🔥 PEGA STATUS DA INSTÂNCIA
     const { data } = await axios.get(
       `${process.env.EVOLUTION_API_URL}/instance/fetchInstances`,
       {
         headers: {
           apikey: process.env.EVOLUTION_API_KEY!,
+          Authorization: `Bearer ${process.env.EVOLUTION_API_KEY!}`,
         },
       }
     );
 
-    const instance = data.find(
-      (i: any) => i.instanceName === instanceName
-    );
+    console.log("FETCH INSTANCES RAW:", data);
+
+    const lista = Array.isArray(data) ? data : data?.instances || [];
+
+    const instance = lista.find((item: any) => {
+      const nome =
+        item?.instanceName ||
+        item?.name ||
+        item?.instance?.instanceName ||
+        item?.instance?.name;
+
+      return nome === instanceName;
+    });
 
     if (!instance) {
       return NextResponse.json({
         error: "Instância não encontrada na Evolution",
+        instanceName,
       });
     }
 
-    // 🔥 SE JÁ ESTÁ CONECTADO
-    if (instance.state === "open") {
+    const estado =
+      instance?.state ||
+      instance?.connectionStatus ||
+      instance?.instance?.state ||
+      instance?.instance?.connectionStatus;
+
+    const numero =
+      instance?.owner ||
+      instance?.number ||
+      instance?.instance?.owner ||
+      instance?.instance?.number ||
+      null;
+
+    if (estado === "open") {
       return NextResponse.json({
         conectado: true,
-        numero: instance.owner || null,
+        estado,
+        numero,
+        instanceName,
       });
     }
 
-    // 🔥 SE NÃO ESTÁ CONECTADO → PEGA QR
-    if (instance.qrcode) {
-      let base64 = instance.qrcode;
+    const qrcode =
+      instance?.qrcode ||
+      instance?.qr ||
+      instance?.base64 ||
+      instance?.instance?.qrcode ||
+      instance?.instance?.qr ||
+      instance?.instance?.base64;
 
-      if (!base64.startsWith("data:image")) {
+    if (qrcode && qrcode !== true) {
+      let base64 = qrcode;
+
+      if (!String(base64).startsWith("data:image")) {
         base64 = `data:image/png;base64,${base64}`;
       }
 
       return NextResponse.json({
         qrcode: base64,
+        estado,
+        instanceName,
       });
     }
 
     return NextResponse.json({
       error: "QR ainda não disponível",
+      estado,
+      instanceName,
     });
   } catch (error: any) {
     console.log("ERRO QR:", error.response?.data || error.message);
 
     return NextResponse.json(
       {
-        error: "Erro ao buscar status",
+        error: "Erro ao buscar status da instância",
         detalhe: error.response?.data || error.message,
       },
       { status: 500 }
