@@ -10,7 +10,7 @@ export default function ClientePage() {
   const [plano, setPlano] = useState<any>(null);
   const [pagamentos, setPagamentos] = useState<any[]>([]);
   const [buscaPagamento, setBuscaPagamento] = useState("");
-  const [status, setStatus] = useState("Preparando área do cliente...");
+  const [status, setStatus] = useState("Validando sessão...");
   const [conectado, setConectado] = useState(false);
   const [bloqueado, setBloqueado] = useState(false);
   const [numero, setNumero] = useState<string | null>(null);
@@ -25,29 +25,7 @@ export default function ClientePage() {
   const [confirmarSenha, setConfirmarSenha] = useState("");
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const idUrl = params.get("cliente");
-    const idStorage = localStorage.getItem("clienteId");
-
-    const id = idUrl || idStorage;
-
-    if (!id) {
-      window.location.href = "/login";
-      return;
-    }
-
-    const instance = `cliente_${id.replace(/-/g, "")}`;
-
-    setClienteId(id);
-    setInstanceName(instance);
-
-    iniciar(id, instance);
-
-    const interval = setInterval(() => {
-      verificarStatus(instance);
-    }, 5000);
-
-    return () => clearInterval(interval);
+    iniciarSessao();
   }, []);
 
   const pagamentosFiltrados = useMemo(() => {
@@ -71,6 +49,55 @@ export default function ClientePage() {
 
     return filtrados.slice(0, 5);
   }, [pagamentos, buscaPagamento]);
+
+  async function iniciarSessao() {
+    const token = localStorage.getItem("clienteToken");
+
+    if (!token) {
+      window.location.href = "/login";
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/cliente/sessao", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ token }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        limparSessaoLocal();
+        window.location.href = "/login";
+        return;
+      }
+
+      const id = data.clienteId;
+      const instance = `cliente_${id.replace(/-/g, "")}`;
+
+      setClienteId(id);
+      setInstanceName(instance);
+
+      localStorage.setItem("clienteId", id);
+      localStorage.setItem("clienteNome", data.nome || "");
+      localStorage.setItem("clienteEmail", data.email || "");
+
+      await iniciar(id, instance);
+
+      const interval = setInterval(() => {
+        verificarStatus(instance);
+      }, 5000);
+
+      return () => clearInterval(interval);
+    } catch (error) {
+      console.error(error);
+      limparSessaoLocal();
+      window.location.href = "/login";
+    }
+  }
 
   async function iniciar(id: string, instance: string) {
     await carregarDados(id);
@@ -100,8 +127,6 @@ export default function ClientePage() {
       if (data.ok) {
         setCliente(data.cliente);
         setPlano(data.plano);
-        localStorage.setItem("clienteNome", data.cliente?.nome || "");
-        localStorage.setItem("clienteEmail", data.cliente?.email || "");
       }
     } catch (error) {
       console.error(error);
@@ -386,11 +411,29 @@ export default function ClientePage() {
     }
   }
 
-  function sair() {
+  async function sair() {
+    const token = localStorage.getItem("clienteToken");
+
+    try {
+      await fetch("/api/cliente/logout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ token }),
+      });
+    } catch {}
+
+    limparSessaoLocal();
+    window.location.href = "/login";
+  }
+
+  function limparSessaoLocal() {
+    localStorage.removeItem("clienteToken");
     localStorage.removeItem("clienteId");
     localStorage.removeItem("clienteNome");
     localStorage.removeItem("clienteEmail");
-    window.location.href = "/login";
+    localStorage.removeItem("clienteSessaoExpira");
   }
 
   function dinheiro(valor: number) {

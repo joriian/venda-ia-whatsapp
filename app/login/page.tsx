@@ -1,11 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function LoginClientePage() {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem("clienteToken");
+
+    if (token) {
+      window.location.href = "/cliente";
+    }
+  }, []);
 
   async function entrar() {
     if (!email || !senha) {
@@ -31,9 +39,11 @@ export default function LoginClientePage() {
         return;
       }
 
+      localStorage.setItem("clienteToken", data.token);
       localStorage.setItem("clienteId", data.clienteId);
       localStorage.setItem("clienteNome", data.nome || "");
       localStorage.setItem("clienteEmail", data.email || "");
+      localStorage.setItem("clienteSessaoExpira", data.expiresAt || "");
 
       window.location.href = "/cliente";
     } catch (error) {
@@ -65,6 +75,9 @@ export default function LoginClientePage() {
           placeholder="Sua senha"
           value={senha}
           onChange={(e) => setSenha(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") entrar();
+          }}
           className="w-full p-3 rounded bg-zinc-800 border border-zinc-700 mb-5"
         />
 
@@ -75,10 +88,6 @@ export default function LoginClientePage() {
         >
           {loading ? "Entrando..." : "Entrar"}
         </button>
-
-        <p className="text-xs text-gray-500 mt-4 text-center">
-          Senha inicial: 123456
-        </p>
       </div>
     </main>
   );
