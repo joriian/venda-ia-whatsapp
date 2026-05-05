@@ -3,19 +3,33 @@ import axios from "axios";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-
-    const instanceName = body.instanceName;
+    const { instanceName } = await req.json();
 
     if (!instanceName) {
       return NextResponse.json(
-        { error: "InstanceName não enviado" },
+        { error: "InstanceName obrigatório" },
         { status: 400 }
       );
     }
 
-    console.log("BUSCANDO QR DA INSTANCIA:", instanceName);
+    console.log("RESETANDO INSTANCIA:", instanceName);
 
+    // 🔥 1. RESETA A INSTANCIA (MUITO IMPORTANTE)
+    await axios.delete(
+      `${process.env.EVOLUTION_API_URL}/instance/logout/${instanceName}`,
+      {
+        headers: {
+          apikey: process.env.EVOLUTION_API_KEY!,
+        },
+      }
+    );
+
+    // 🔥 2. AGUARDA UM POUCO
+    await new Promise((r) => setTimeout(r, 2000));
+
+    console.log("GERANDO QR:", instanceName);
+
+    // 🔥 3. PEGA QR NOVO
     const res = await axios.get(
       `${process.env.EVOLUTION_API_URL}/instance/connect/${instanceName}`,
       {
