@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export default function ClientePage() {
   const [qr, setQr] = useState<string | null>(null);
@@ -9,6 +9,7 @@ export default function ClientePage() {
   const [cliente, setCliente] = useState<any>(null);
   const [plano, setPlano] = useState<any>(null);
   const [pagamentos, setPagamentos] = useState<any[]>([]);
+  const [buscaPagamento, setBuscaPagamento] = useState("");
   const [status, setStatus] = useState("Preparando área do cliente...");
   const [conectado, setConectado] = useState(false);
   const [bloqueado, setBloqueado] = useState(false);
@@ -21,6 +22,7 @@ export default function ClientePage() {
   const [loadingSenha, setLoadingSenha] = useState(false);
   const [senhaAtual, setSenhaAtual] = useState("");
   const [novaSenha, setNovaSenha] = useState("");
+  const [confirmarSenha, setConfirmarSenha] = useState("");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -47,6 +49,28 @@ export default function ClientePage() {
 
     return () => clearInterval(interval);
   }, []);
+
+  const pagamentosFiltrados = useMemo(() => {
+    const busca = buscaPagamento.toLowerCase().trim();
+
+    const filtrados = pagamentos.filter((p) => {
+      const texto = [
+        p.status,
+        p.plano_id,
+        p.payment_id,
+        p.mercado_pago_id,
+        p.valor,
+        p.created_at,
+        p.criado_em,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return !busca || texto.includes(busca);
+    });
+
+    return filtrados.slice(0, 5);
+  }, [pagamentos, buscaPagamento]);
 
   async function iniciar(id: string, instance: string) {
     await carregarDados(id);
@@ -311,8 +335,13 @@ export default function ClientePage() {
   }
 
   async function alterarSenha() {
-    if (!senhaAtual || !novaSenha) {
-      alert("Preencha a senha atual e a nova senha.");
+    if (!senhaAtual || !novaSenha || !confirmarSenha) {
+      alert("Preencha a senha atual, a nova senha e a confirmação.");
+      return;
+    }
+
+    if (novaSenha !== confirmarSenha) {
+      alert("A nova senha e a confirmação não são iguais.");
       return;
     }
 
@@ -347,6 +376,7 @@ export default function ClientePage() {
 
       setSenhaAtual("");
       setNovaSenha("");
+      setConfirmarSenha("");
       alert("Senha alterada com sucesso.");
     } catch (error) {
       console.error(error);
@@ -372,8 +402,41 @@ export default function ClientePage() {
 
   function dataFormatada(data: string) {
     if (!data) return "-";
-
     return new Date(data).toLocaleDateString("pt-BR");
+  }
+
+  function traduzirStatus(status: string) {
+    const mapa: any = {
+      approved: "Aprovado",
+      pending: "Pendente",
+      rejected: "Recusado",
+      cancelled: "Cancelado",
+      refunded: "Reembolsado",
+      charged_back: "Estornado",
+      approved_manual: "Aprovado manualmente",
+    };
+
+    return mapa[status] || status || "-";
+  }
+
+  function classeStatus(status: string) {
+    if (status === "approved" || status === "approved_manual") {
+      return "bg-green-900/40 text-green-400 border-green-700";
+    }
+
+    if (status === "pending") {
+      return "bg-yellow-900/40 text-yellow-400 border-yellow-700";
+    }
+
+    if (
+      status === "rejected" ||
+      status === "cancelled" ||
+      status === "charged_back"
+    ) {
+      return "bg-red-900/40 text-red-400 border-red-700";
+    }
+
+    return "bg-zinc-800 text-gray-300 border-zinc-700";
   }
 
   if (bloqueado) {
@@ -429,10 +492,7 @@ export default function ClientePage() {
         <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <Card titulo="Cliente" valor={cliente?.nome || "-"} />
           <Card titulo="Status do plano" valor={cliente?.status || "-"} />
-          <Card
-            titulo="Expira em"
-            valor={dataFormatada(cliente?.data_expiracao)}
-          />
+          <Card titulo="Expira em" valor={dataFormatada(cliente?.data_expiracao)} />
         </section>
 
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -445,14 +505,8 @@ export default function ClientePage() {
 
             <div className="grid gap-3 text-sm">
               <Info label="Plano" value={plano?.nome || cliente?.plano_id || "-"} />
-              <Info
-                label="Valor"
-                value={plano?.valor ? dinheiro(plano.valor) : "-"}
-              />
-              <Info
-                label="Duração"
-                value={plano?.meses ? `${plano.meses} mês(es)` : "-"}
-              />
+              <Info label="Valor" value={plano?.valor ? dinheiro(plano.valor) : "-"} />
+              <Info label="Duração" value={plano?.meses ? `${plano.meses} mês(es)` : "-"} />
               <Info label="Email" value={cliente?.email || "-"} />
               <Info label="Telefone" value={cliente?.telefone || "-"} />
             </div>
@@ -525,11 +579,21 @@ export default function ClientePage() {
           </div>
 
           <div className="bg-zinc-900 border border-zinc-700 p-6 rounded-2xl lg:col-span-2">
-            <h2 className="text-xl font-bold mb-2">Histórico de pagamentos</h2>
+            <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-5">
+              <div>
+                <h2 className="text-xl font-bold mb-2">Histórico de pagamentos</h2>
+                <p className="text-gray-400 text-sm">
+                  Exibindo os últimos 5 pagamentos encontrados.
+                </p>
+              </div>
 
-            <p className="text-gray-400 text-sm mb-5">
-              Veja os pagamentos registrados na sua conta.
-            </p>
+              <input
+                value={buscaPagamento}
+                onChange={(e) => setBuscaPagamento(e.target.value)}
+                placeholder="Buscar por status, plano, valor ou ID..."
+                className="p-3 rounded bg-zinc-800 border border-zinc-700 w-full md:w-80"
+              />
+            </div>
 
             <div className="overflow-x-auto border border-zinc-700 rounded-xl">
               <table className="w-full text-sm">
@@ -544,8 +608,11 @@ export default function ClientePage() {
                 </thead>
 
                 <tbody>
-                  {pagamentos.map((pagamento) => (
-                    <tr key={pagamento.id || pagamento.payment_id} className="border-b border-zinc-800">
+                  {pagamentosFiltrados.map((pagamento) => (
+                    <tr
+                      key={pagamento.id || pagamento.payment_id}
+                      className="border-b border-zinc-800"
+                    >
                       <td className="p-3">
                         {dataFormatada(
                           pagamento.created_at ||
@@ -553,18 +620,26 @@ export default function ClientePage() {
                             pagamento.data_criacao
                         )}
                       </td>
+
                       <td className="p-3">{pagamento.plano_id || "-"}</td>
+
                       <td className="p-3">
-                        <span className="px-3 py-1 rounded-full bg-green-900/40 text-green-400 border border-green-700 text-xs font-bold">
-                          {pagamento.status || "-"}
+                        <span
+                          className={`px-3 py-1 rounded-full border text-xs font-bold ${classeStatus(
+                            pagamento.status
+                          )}`}
+                        >
+                          {traduzirStatus(pagamento.status)}
                         </span>
                       </td>
+
                       <td className="p-3">{dinheiro(pagamento.valor || 0)}</td>
+
                       <td className="p-3">{pagamento.payment_id || "-"}</td>
                     </tr>
                   ))}
 
-                  {pagamentos.length === 0 && (
+                  {pagamentosFiltrados.length === 0 && (
                     <tr>
                       <td className="p-5 text-center text-gray-400" colSpan={5}>
                         Nenhum pagamento encontrado.
@@ -591,7 +666,7 @@ export default function ClientePage() {
               uma letra minúscula, um número e um caractere especial.
             </p>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <input
                 type="password"
                 placeholder="Senha atual"
@@ -605,6 +680,14 @@ export default function ClientePage() {
                 placeholder="Nova senha"
                 value={novaSenha}
                 onChange={(e) => setNovaSenha(e.target.value)}
+                className="p-3 rounded bg-zinc-800 border border-zinc-700"
+              />
+
+              <input
+                type="password"
+                placeholder="Confirmar nova senha"
+                value={confirmarSenha}
+                onChange={(e) => setConfirmarSenha(e.target.value)}
                 className="p-3 rounded bg-zinc-800 border border-zinc-700"
               />
 
