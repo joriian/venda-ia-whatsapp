@@ -7,6 +7,10 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function POST(req: Request) {
   try {
     const { clienteId } = await req.json();
@@ -27,27 +31,49 @@ export async function POST(req: Request) {
 
     const instanceName = instancia.instance_name;
 
-    const { data } = await axios.get(
+    // 🔥 INICIA CONEXÃO
+    await axios.get(
       `${process.env.EVOLUTION_API_URL}/instance/connect/${instanceName}`,
       {
         headers: {
           apikey: process.env.EVOLUTION_API_KEY!,
-          Authorization: `Bearer ${process.env.EVOLUTION_API_KEY!}`,
         },
       }
     );
 
-    console.log("QR RAW:", data);
+    let base64 = null;
 
-    let base64 =
-      data?.base64 ||
-      data?.qrcode?.base64 ||
-      data?.qrcode ||
-      data?.qr;
+    // 🔥 TENTA PEGAR QR POR 10 VEZES
+    for (let i = 0; i < 10; i++) {
+      const response = await axios.get(
+        `${process.env.EVOLUTION_API_URL}/instance/qrcode/${instanceName}`,
+        {
+          headers: {
+            apikey: process.env.EVOLUTION_API_KEY!,
+          },
+        }
+      );
+
+      const data = response.data;
+
+      console.log(`Tentativa ${i + 1}:`, data);
+
+      base64 =
+        data?.base64 ||
+        data?.qrcode?.base64 ||
+        data?.qrcode ||
+        data?.qr;
+
+      if (base64 && base64 !== true) {
+        break;
+      }
+
+      await sleep(2000); // espera 2s
+    }
 
     if (!base64 || base64 === true) {
       return NextResponse.json({
-        error: "QR ainda não disponível, clique novamente em alguns segundos",
+        error: "QR não gerado ainda, tente novamente",
       });
     }
 
