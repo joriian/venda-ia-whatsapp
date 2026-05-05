@@ -7,11 +7,42 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+async function validarAdmin(req: Request) {
+  const token = req.headers.get("x-admin-token");
+
+  if (!token) return null;
+
+  const { data: admin } = await supabase
+    .from("admin_users")
+    .select("*")
+    .eq("session_token", token)
+    .eq("ativo", true)
+    .maybeSingle();
+
+  if (!admin) return null;
+
+  const expira = admin.session_expires_at
+    ? new Date(admin.session_expires_at)
+    : null;
+
+  if (!expira || expira < new Date()) return null;
+
+  return admin;
+}
+
+function podeBloquearReativar(nivel: string) {
+  return nivel === "dono" || nivel === "admin";
+}
+
+function podeFinanceiro(nivel: string) {
+  return nivel === "dono" || nivel === "admin" || nivel === "financeiro";
+}
+
 export async function POST(req: Request) {
   try {
-    const senha = req.headers.get("x-admin-password");
+    const admin = await validarAdmin(req);
 
-    if (senha !== process.env.ADMIN_PASSWORD) {
+    if (!admin) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
     }
 
@@ -19,6 +50,20 @@ export async function POST(req: Request) {
 
     if (!cliente_id || !acao) {
       return NextResponse.json({ error: "Dados inválidos" }, { status: 400 });
+    }
+
+    if ((acao === "bloquear" || acao === "reativar") && !podeBloquearReativar(admin.nivel)) {
+      return NextResponse.json(
+        { error: "Sem permissão para bloquear ou reativar clientes" },
+        { status: 403 }
+      );
+    }
+
+    if ((acao === "gerar_link" || acao === "cobrar") && !podeFinanceiro(admin.nivel)) {
+      return NextResponse.json(
+        { error: "Sem permissão para ações financeiras" },
+        { status: 403 }
+      );
     }
 
     const { data: cliente } = await supabase
@@ -93,6 +138,13 @@ export async function POST(req: Request) {
       });
 
       const data = await response.json();
+
+      if (!data.url) {
+        return NextResponse.json(
+          { error: "Erro ao gerar link de pagamento" },
+          { status: 500 }
+        );
+      }
 
       return NextResponse.json({
         ok: true,
