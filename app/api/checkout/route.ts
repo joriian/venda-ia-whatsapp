@@ -12,18 +12,18 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { planoId, email, nome, telefone } = body;
 
-    const { data: plano, error: planoError } = await supabase
+    const { data: plano } = await supabase
       .from("planos")
       .select("*")
       .eq("id", planoId)
       .eq("ativo", true)
       .single();
 
-    if (planoError || !plano) {
+    if (!plano) {
       return NextResponse.json({ error: "Plano inválido" }, { status: 400 });
     }
 
-    const { data: cliente, error: clienteError } = await supabase
+    const { data: cliente } = await supabase
       .from("clientes_ia_whatsapp")
       .insert({
         nome: nome || "Cliente",
@@ -35,11 +35,8 @@ export async function POST(req: Request) {
       .select()
       .single();
 
-    if (clienteError || !cliente) {
-      return NextResponse.json(
-        { error: "Erro ao criar cliente" },
-        { status: 500 }
-      );
+    if (!cliente) {
+      return NextResponse.json({ error: "Erro ao criar cliente" }, { status: 500 });
     }
 
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL!;
@@ -65,17 +62,12 @@ export async function POST(req: Request) {
           meses: plano.meses,
           valor: plano.valor,
         },
-
-        // 🔥 REDIRECIONAMENTO
         back_urls: {
-          success: `${siteUrl}/sucesso?cliente=${cliente.id}`,
+          success: `${siteUrl}/aguardando-pagamento?cliente=${cliente.id}`,
           failure: `${siteUrl}/erro`,
-          pending: `${siteUrl}/pendente`,
+          pending: `${siteUrl}/aguardando-pagamento?cliente=${cliente.id}`,
         },
-
-        // 🔥 ISSO FAZ REDIRECIONAR AUTOMATICO
         auto_return: "approved",
-
         notification_url: `${siteUrl}/api/webhook/mercadopago`,
       },
       {
@@ -89,10 +81,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ init_point: response.data.init_point });
   } catch (error: any) {
     console.log("ERRO CHECKOUT:", error.response?.data || error.message);
-
-    return NextResponse.json(
-      { error: "Erro ao criar pagamento" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Erro ao criar pagamento" }, { status: 500 });
   }
 }
