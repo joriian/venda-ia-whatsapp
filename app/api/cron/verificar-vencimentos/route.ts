@@ -1,183 +1,132 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import axios from "axios";
+import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const EVOLUTION_URL = process.env.EVOLUTION_API_URL!;
-const EVOLUTION_KEY = process.env.EVOLUTION_API_KEY!;
-
-function limparTelefone(telefone: string) {
-  return String(telefone || "").replace(/\D/g, "");
-}
-
-async function enviarMensagem(instanceName: string, telefone: string, texto: string) {
-  const numero = limparTelefone(telefone);
-
-  if (!numero) return;
-
-  await axios.post(
-    `${EVOLUTION_URL}/message/sendText/${instanceName}`,
-    {
-      number: numero,
-      text: texto,
-    },
-    {
-      headers: {
-        apikey: EVOLUTION_KEY,
-        "Content-Type": "application/json",
-      },
-    }
-  );
-}
-
-async function desconectarInstancia(instanceName: string) {
+export async function GET() {
   try {
-    await axios.delete(`${EVOLUTION_URL}/instance/logout/${instanceName}`, {
-      headers: {
-        apikey: EVOLUTION_KEY,
-      },
-    });
-  } catch (error: any) {
-    console.log(
-      "INSTÂNCIA NÃO DESCONECTADA:",
-      instanceName,
-      error.response?.data || error.message
-    );
-  }
-}
-
-async function criarLinkRenovacao(clienteId: string) {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL!;
-
-  const response = await fetch(`${siteUrl}/api/pagamento/criar`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ clienteId }),
-  });
-
-  const data = await response.json();
-
-  return data.url || siteUrl;
-}
-
-export async function GET(req: Request) {
-  try {
-    const url = new URL(req.url);
-    const secret = url.searchParams.get("secret");
-
-    if (secret !== process.env.CRON_SECRET) {
-      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-    }
-
     console.log("CRON: verificando vencimentos...");
 
-    const hoje = new Date();
+    const agora = new Date().toISOString();
 
-    const { data: clientes, error } = await supabase
+    const { data: clientes } = await supabase
       .from("clientes_ia_whatsapp")
       .select("*")
-      .eq("status", "ativo");
+      .lte("data_expiracao", agora);
 
-    if (error) {
-      console.log("ERRO SUPABASE:", error);
-      return NextResponse.json({ error: true }, { status: 500 });
+    if (!clientes || clientes.length === 0) {
+      console.log("CRON: nenhum cliente vencido");
+      return NextResponse.json({ ok: true, clientes: 0 });
     }
 
-    let avisados = 0;
-    let vencidos = 0;
+    for (const cliente of clientes) {
+      try {
+        console.log("CLIENTE VENCIDO:", cliente.id);
 
-    for (const cliente of clientes || []) {
-      if (!cliente.data_expiracao) continue;
-
-      const expiracao = new Date(cliente.data_expiracao);
-
-      const diffDias = Math.ceil(
-        (expiracao.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24)
-      );
-
-      const instanceName = `cliente_${cliente.id}`.replace(/-/g, "");
-
-      if (diffDias <= 3 && diffDias > 0) {
-        try {
-          const linkRenovacao = await criarLinkRenovacao(cliente.id);
-
-          await enviarMensagem(
-            instanceName,
-            cliente.telefone,
-            `Olá, ${cliente.nome || "cliente"}!
-
-Seu plano vence em ${diffDias} dia(s).
-
-Para renovar e não perder o acesso, pague pelo link abaixo:
-${linkRenovacao}`
-          );
-
-          avisados++;
-          console.log("AVISO ENVIADO:", cliente.telefone);
-        } catch (error: any) {
-          console.log("ERRO AO ENVIAR AVISO:", error.response?.data || error.message);
-        }
-      }
-
-      if (diffDias <= 0) {
-        try {
-          const linkRenovacao = await criarLinkRenovacao(cliente.id);
-
-          await enviarMensagem(
-            instanceName,
-            cliente.telefone,
-            `Olá, ${cliente.nome || "cliente"}!
-
-Seu plano venceu e o acesso foi bloqueado.
-
-Para renovar, pague pelo link abaixo:
-${linkRenovacao}`
-          );
-        } catch (error: any) {
-          console.log("ERRO AO ENVIAR BLOQUEIO:", error.response?.data || error.message);
+        // já vencido? evita loop
+        if (cliente.status === "vencido") {
+          console.log("JA BLOQUEADO:", cliente.id);
+          continue;
         }
 
-        await desconectarInstancia(instanceName);
-
+        // 🔴 ATUALIZA STATUS
         await supabase
           .from("clientes_ia_whatsapp")
-          .update({
-            status: "vencido",
-          })
+          .update({ status: "vencido" })
           .eq("id", cliente.id);
 
-        await supabase
-          .from("instancias_evolution")
-          .update({
-            status: "bloqueado_vencido",
-          })
-          .eq("cliente_id", cliente.id);
+        const instanceName = `cliente_${cliente.id}`.replace(/-/g, "");
 
-        vencidos++;
-        console.log("CLIENTE BLOQUEADO:", cliente.id);
+        // 🔴 BUSCA INSTANCIA
+        const { data: instancia } = await supabase
+          .from("instancias_evolution")
+          .select("*")
+          .eq("cliente_id", cliente.id)
+          .maybeSingle();
+
+        // 🔴 BLOQUEAR WHATSAPP
+        if (instancia?.status === "conectado") {
+          try {
+            console.log("DESCONECTANDO:", instanceName);
+
+            await axios.post(
+              `${process.env.EVOLUTION_API_URL}/instance/logout`,
+              { instanceName },
+              {
+                headers: {
+                  apikey: process.env.EVOLUTION_API_KEY!,
+                },
+              }
+            );
+
+            console.log("DESCONECTADO:", instanceName);
+
+            await supabase
+              .from("instancias_evolution")
+              .update({ status: "desconectado" })
+              .eq("cliente_id", cliente.id);
+          } catch (err: any) {
+            console.log(
+              "ERRO AO DESCONECTAR:",
+              err.response?.data || err.message
+            );
+          }
+        }
+
+        // 🟢 GERAR LINK DE PAGAMENTO
+        const { data: pagamento } = await axios.post(
+          `${process.env.APP_URL}/api/pagamento/criar`,
+          {
+            cliente_id: cliente.id,
+          }
+        );
+
+        const linkPagamento = pagamento?.link;
+
+        // 🟢 ENVIAR MENSAGEM
+        try {
+          console.log("ENVIANDO COBRANÇA:", cliente.telefone);
+
+          await axios.post(
+            `${process.env.EVOLUTION_API_URL}/message/sendText/${instanceName}`,
+            {
+              number: cliente.telefone,
+              text: `⚠️ Seu plano venceu.
+
+Para continuar usando, realize o pagamento:
+
+${linkPagamento}`,
+            },
+            {
+              headers: {
+                apikey: process.env.EVOLUTION_API_KEY!,
+              },
+            }
+          );
+        } catch (err: any) {
+          console.log(
+            "ERRO AO ENVIAR MSG:",
+            err.response?.data || err.message
+          );
+        }
+      } catch (err: any) {
+        console.log("ERRO CLIENTE:", cliente.id, err.message);
       }
     }
 
     return NextResponse.json({
       ok: true,
-      avisados,
-      vencidos,
-      clientes_verificados: clientes?.length || 0,
+      clientes: clientes.length,
     });
   } catch (error: any) {
-    console.log("ERRO CRON:", error.response?.data || error.message);
+    console.log("ERRO CRON:", error.message);
 
     return NextResponse.json(
-      {
-        error: true,
-        detalhe: error.response?.data || error.message,
-      },
+      { error: true },
       { status: 500 }
     );
   }
