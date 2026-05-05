@@ -8,18 +8,12 @@ export default function AdminPage() {
   const [planos, setPlanos] = useState<any[]>([]);
   const [clientes, setClientes] = useState<any[]>([]);
   const [instancias, setInstancias] = useState<any[]>([]);
+  const [dashboard, setDashboard] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
   async function entrar() {
-    if (!senha) {
-      alert("Digite a senha");
-      return;
-    }
-
     const res = await fetch("/api/admin/dados", {
-      headers: {
-        "x-admin-password": senha,
-      },
+      headers: { "x-admin-password": senha },
     });
 
     if (!res.ok) {
@@ -32,23 +26,31 @@ export default function AdminPage() {
     setPlanos(data.planos || []);
     setClientes(data.clientes || []);
     setLogado(true);
+
+    carregarDashboard();
     carregarInstancias();
 
     setInterval(() => {
+      carregarDashboard();
       carregarInstancias();
     }, 5000);
   }
 
-  async function carregarInstancias() {
-    try {
-      const res = await fetch("/api/admin/instances");
-      const data = await res.json();
+  async function carregarDashboard() {
+    const res = await fetch("/api/admin/dashboard", {
+      headers: { "x-admin-password": senha },
+    });
 
-      if (Array.isArray(data)) {
-        setInstancias(data);
-      }
-    } catch (error) {
-      console.log("Erro ao carregar instâncias", error);
+    const data = await res.json();
+    setDashboard(data);
+  }
+
+  async function carregarInstancias() {
+    const res = await fetch("/api/admin/instances");
+    const data = await res.json();
+
+    if (Array.isArray(data)) {
+      setInstancias(data);
     }
   }
 
@@ -72,6 +74,13 @@ export default function AdminPage() {
     }
 
     alert("Plano salvo");
+  }
+
+  function dinheiro(valor: number) {
+    return Number(valor || 0).toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    });
   }
 
   if (!logado) {
@@ -102,6 +111,19 @@ export default function AdminPage() {
   return (
     <main className="min-h-screen bg-black text-white p-6">
       <h1 className="text-3xl font-bold mb-8">Painel Admin</h1>
+
+      {dashboard && (
+        <section className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10">
+          <Card titulo="Receita total" valor={dinheiro(dashboard.receita_total)} />
+          <Card titulo="Receita do mês" valor={dinheiro(dashboard.receita_mes)} />
+          <Card titulo="Clientes ativos" valor={dashboard.ativos} />
+          <Card titulo="Vencendo em 3 dias" valor={dashboard.vencendo} />
+          <Card titulo="Clientes vencidos" valor={dashboard.vencidos} />
+          <Card titulo="Aguardando pagamento" valor={dashboard.aguardando} />
+          <Card titulo="Total de clientes" valor={dashboard.clientes_total} />
+          <Card titulo="Pagamentos" valor={dashboard.pagamentos_total} />
+        </section>
+      )}
 
       <section className="mb-10">
         <h2 className="text-2xl font-bold mb-4">Planos</h2>
@@ -226,36 +248,30 @@ export default function AdminPage() {
                   : "border-red-600 bg-red-900/20"
               }`}
             >
-              <p>
-                <strong>Instância:</strong> {instancia.instance}
-              </p>
+              <p><strong>Instância:</strong> {instancia.instance}</p>
 
               <p>
                 <strong>Status:</strong>{" "}
-                <span
-                  className={
-                    instancia.conectado ? "text-green-400" : "text-red-400"
-                  }
-                >
+                <span className={instancia.conectado ? "text-green-400" : "text-red-400"}>
                   {instancia.conectado ? "CONECTADO" : "DESCONECTADO"}
                 </span>
               </p>
 
-              {instancia.nome && (
-                <p>
-                  <strong>Nome:</strong> {instancia.nome}
-                </p>
-              )}
-
-              {instancia.numero && (
-                <p>
-                  <strong>Número:</strong> {instancia.numero}
-                </p>
-              )}
+              {instancia.nome && <p><strong>Nome:</strong> {instancia.nome}</p>}
+              {instancia.numero && <p><strong>Número:</strong> {instancia.numero}</p>}
             </div>
           ))}
         </div>
       </section>
     </main>
+  );
+}
+
+function Card({ titulo, valor }: { titulo: string; valor: any }) {
+  return (
+    <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5">
+      <p className="text-gray-400 text-sm">{titulo}</p>
+      <p className="text-2xl font-bold mt-2">{valor}</p>
+    </div>
   );
 }
