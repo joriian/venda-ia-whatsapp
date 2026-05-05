@@ -50,6 +50,22 @@ async function desconectarInstancia(instanceName: string) {
   }
 }
 
+async function criarLinkRenovacao(clienteId: string) {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL!;
+
+  const response = await fetch(`${siteUrl}/api/pagamento/criar`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ clienteId }),
+  });
+
+  const data = await response.json();
+
+  return data.url || siteUrl;
+}
+
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
@@ -66,7 +82,7 @@ export async function GET(req: Request) {
     const { data: clientes, error } = await supabase
       .from("clientes_ia_whatsapp")
       .select("*")
-      .in("status", ["ativo"]);
+      .eq("status", "ativo");
 
     if (error) {
       console.log("ERRO SUPABASE:", error);
@@ -80,6 +96,7 @@ export async function GET(req: Request) {
       if (!cliente.data_expiracao) continue;
 
       const expiracao = new Date(cliente.data_expiracao);
+
       const diffDias = Math.ceil(
         (expiracao.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24)
       );
@@ -88,10 +105,17 @@ export async function GET(req: Request) {
 
       if (diffDias <= 3 && diffDias > 0) {
         try {
+          const linkRenovacao = await criarLinkRenovacao(cliente.id);
+
           await enviarMensagem(
             instanceName,
             cliente.telefone,
-            `Olá, ${cliente.nome || "cliente"}! Seu plano vence em ${diffDias} dia(s). Renove para não perder o acesso ao sistema.`
+            `Olá, ${cliente.nome || "cliente"}!
+
+Seu plano vence em ${diffDias} dia(s).
+
+Para renovar e não perder o acesso, pague pelo link abaixo:
+${linkRenovacao}`
           );
 
           avisados++;
@@ -103,10 +127,17 @@ export async function GET(req: Request) {
 
       if (diffDias <= 0) {
         try {
+          const linkRenovacao = await criarLinkRenovacao(cliente.id);
+
           await enviarMensagem(
             instanceName,
             cliente.telefone,
-            `Olá, ${cliente.nome || "cliente"}! Seu plano venceu e o acesso foi bloqueado. Renove para continuar usando.`
+            `Olá, ${cliente.nome || "cliente"}!
+
+Seu plano venceu e o acesso foi bloqueado.
+
+Para renovar, pague pelo link abaixo:
+${linkRenovacao}`
           );
         } catch (error: any) {
           console.log("ERRO AO ENVIAR BLOQUEIO:", error.response?.data || error.message);
