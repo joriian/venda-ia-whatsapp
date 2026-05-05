@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 
 export default function ClientePage() {
   const [qr, setQr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [instanceName, setInstanceName] = useState("");
+  const [status, setStatus] = useState("Aguardando...");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -14,45 +14,45 @@ export default function ClientePage() {
     if (clienteId) {
       const instance = `cliente_${clienteId.replace(/-/g, "")}`;
       setInstanceName(instance);
-      console.log("INSTANCIA GERADA:", instance);
+
+      iniciarBuscaQR(instance);
     }
   }, []);
 
-  async function gerarQR() {
-    try {
-      if (!instanceName) {
-        alert("Erro: instância inválida");
-        return;
+  async function iniciarBuscaQR(instance: string) {
+    setStatus("Gerando QR Code...");
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch("/api/instance/qrcode", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ instanceName: instance }),
+        });
+
+        const data = await res.json();
+
+        if (data?.base64) {
+          setQr(data.base64);
+          setStatus("Escaneie o QR Code");
+          clearInterval(interval);
+        } else {
+          console.log("QR ainda não pronto...");
+        }
+      } catch (err) {
+        console.log("Erro tentando buscar QR...");
       }
-
-      setLoading(true);
-
-      const res = await fetch("/api/instance/qrcode", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ instanceName }),
-      });
-
-      const data = await res.json();
-
-      if (data?.base64) {
-        setQr(data.base64);
-      } else {
-        alert("QR ainda não disponível, tente novamente");
-      }
-    } catch (err) {
-      alert("Erro ao gerar QR");
-    } finally {
-      setLoading(false);
-    }
+    }, 3000);
   }
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-black text-white">
-      <div className="bg-zinc-900 p-8 rounded-xl text-center">
+      <div className="bg-zinc-900 p-8 rounded-xl text-center w-[300px]">
         <h1 className="text-xl mb-4">Área do Cliente</h1>
+
+        <p className="mb-4 text-sm text-gray-400">{status}</p>
 
         {qr ? (
           <img
@@ -60,13 +60,7 @@ export default function ClientePage() {
             className="mx-auto"
           />
         ) : (
-          <button
-            onClick={gerarQR}
-            className="bg-green-600 px-6 py-3 rounded"
-            disabled={loading}
-          >
-            {loading ? "Gerando..." : "Conectar WhatsApp"}
-          </button>
+          <div className="text-gray-500">Aguarde...</div>
         )}
       </div>
     </main>
