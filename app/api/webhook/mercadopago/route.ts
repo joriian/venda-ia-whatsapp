@@ -43,15 +43,8 @@ export async function POST(req: Request) {
         external_reference: pagamento.external_reference,
       });
 
-      return NextResponse.json({
-        ok: true,
-        ignored: "cliente_id_ausente",
-      });
+      return NextResponse.json({ ok: true, ignored: "cliente_id_ausente" });
     }
-
-    const planoId = pagamento.metadata?.plano_id || null;
-    const meses = Number(pagamento.metadata?.meses || 1);
-    const valor = Number(pagamento.transaction_amount || 0);
 
     const { data: clienteExistente } = await supabase
       .from("clientes_ia_whatsapp")
@@ -61,16 +54,19 @@ export async function POST(req: Request) {
 
     if (!clienteExistente) {
       console.log("WEBHOOK IGNORADO: cliente não encontrado", clienteId);
-
-      return NextResponse.json({
-        ok: true,
-        ignored: "cliente_nao_encontrado",
-      });
+      return NextResponse.json({ ok: true, ignored: "cliente_nao_encontrado" });
     }
 
-    const dataInicio = new Date();
-    const dataExpiracao = new Date();
-    dataExpiracao.setMonth(dataExpiracao.getMonth() + meses);
+    const planoId = pagamento.metadata?.plano_id || clienteExistente.plano_id;
+
+    const { data: plano } = await supabase
+      .from("planos")
+      .select("*")
+      .eq("id", planoId)
+      .single();
+
+    const meses = Number(pagamento.metadata?.meses || plano?.meses || 1);
+    const valor = Number(pagamento.transaction_amount || pagamento.metadata?.valor || 0);
 
     const { data: pagamentoExistente } = await supabase
       .from("pagamentos_ia_whatsapp")
@@ -89,13 +85,24 @@ export async function POST(req: Request) {
       });
     }
 
+    const agora = new Date();
+
+    const baseExpiracao =
+      clienteExistente.data_expiracao &&
+      new Date(clienteExistente.data_expiracao) > agora
+        ? new Date(clienteExistente.data_expiracao)
+        : agora;
+
+    const novaExpiracao = new Date(baseExpiracao);
+    novaExpiracao.setMonth(novaExpiracao.getMonth() + meses);
+
     await supabase
       .from("clientes_ia_whatsapp")
       .update({
         status: "ativo",
-        plano_id: planoId || clienteExistente.plano_id,
-        data_inicio: dataInicio.toISOString(),
-        data_expiracao: dataExpiracao.toISOString(),
+        plano_id: planoId,
+        data_inicio: agora.toISOString(),
+        data_expiracao: novaExpiracao.toISOString(),
       })
       .eq("id", clienteId);
 
@@ -114,11 +121,11 @@ export async function POST(req: Request) {
       ? instances.data
       : instances.data?.instances || [];
 
-    const jaExiste = lista.some((i: any) => {
+    const instanciaEvolution = lista.find((i: any) => {
       return i?.name === instanceName || i?.instanceName === instanceName;
     });
 
-    if (!jaExiste) {
+    if (!instanciaEvolution) {
       await axios.post(
         `${process.env.EVOLUTION_API_URL}/instance/create`,
         {
@@ -139,6 +146,8 @@ export async function POST(req: Request) {
       console.log("INSTANCIA JÁ EXISTE:", instanceName);
     }
 
+    const statusEvolution = instanciaEvolution?.connectionStatus || "aguardando_qrcode";
+
     const { data: instanciaBanco } = await supabase
       .from("instancias_evolution")
       .select("*")
@@ -149,14 +158,24 @@ export async function POST(req: Request) {
       await supabase.from("instancias_evolution").insert({
         cliente_id: clienteId,
         instance_name: instanceName,
-        status: "aguardando_qrcode",
+        status: statusEvolution,
       });
+    } else {
+      await supabase
+        .from("instancias_evolution")
+        .update({
+          instance_name: instanceName,
+          status: statusEvolution === "open" ? "conectado" : statusEvolution,
+        })
+        .eq("cliente_id", clienteId);
     }
 
     return NextResponse.json({
       ok: true,
       clienteId,
+      planoId,
       instanceName,
+      novaExpiracao: novaExpiracao.toISOString(),
     });
   } catch (error: any) {
     console.log("ERRO WEBHOOK:", error.response?.data || error.message);
