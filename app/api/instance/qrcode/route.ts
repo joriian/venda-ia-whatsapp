@@ -12,10 +12,7 @@ export async function POST(req: Request) {
     const { clienteId } = await req.json();
 
     if (!clienteId) {
-      return NextResponse.json(
-        { error: "clienteId obrigatório" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "clienteId obrigatório" }, { status: 400 });
     }
 
     const { data: instancia } = await supabase
@@ -25,15 +22,12 @@ export async function POST(req: Request) {
       .single();
 
     if (!instancia) {
-      return NextResponse.json(
-        { error: "Instância não encontrada" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Instância não encontrada" }, { status: 404 });
     }
 
     const instanceName = instancia.instance_name;
 
-    // 🔥 FORÇA CONEXÃO
+    // 🔥 INICIA CONEXÃO
     await axios.post(
       `${process.env.EVOLUTION_API_URL}/instance/connect/${instanceName}`,
       {},
@@ -44,8 +38,11 @@ export async function POST(req: Request) {
       }
     );
 
+    // 🔥 ESPERA UM POUCO (ESSENCIAL)
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+
     // 🔥 PEGA QR
-    const { data } = await axios.get(
+    const response = await axios.get(
       `${process.env.EVOLUTION_API_URL}/instance/qrcode/${instanceName}`,
       {
         headers: {
@@ -54,14 +51,30 @@ export async function POST(req: Request) {
       }
     );
 
-    if (!data?.base64) {
+    const data = response.data;
+
+    console.log("QR RAW:", data);
+
+    // 🔥 TRATA TODOS OS FORMATOS POSSÍVEIS
+    let base64 =
+      data?.base64 ||
+      data?.qrcode?.base64 ||
+      data?.qr ||
+      data?.qrcode;
+
+    if (!base64) {
       return NextResponse.json({
-        error: "QR ainda não gerado",
+        error: "QR ainda não disponível, tente novamente",
       });
     }
 
+    // 🔥 GARANTE FORMATO IMG
+    if (!base64.startsWith("data:image")) {
+      base64 = `data:image/png;base64,${base64}`;
+    }
+
     return NextResponse.json({
-      qrcode: data.base64,
+      qrcode: base64,
     });
   } catch (error: any) {
     console.log("ERRO QR:", error.response?.data || error.message);
