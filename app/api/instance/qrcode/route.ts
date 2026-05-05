@@ -31,19 +31,9 @@ export async function POST(req: Request) {
 
     const instanceName = instancia.instance_name;
 
-    // 🔥 INICIA CONEXÃO
-    await axios.get(
-      `${process.env.EVOLUTION_API_URL}/instance/connect/${instanceName}`,
-      {
-        headers: {
-          apikey: process.env.EVOLUTION_API_KEY!,
-        },
-      }
-    );
-
     let base64 = null;
 
-    // 🔥 TENTA PEGAR QR POR 10 VEZES
+    // 🔥 TENTA PEGAR QR DIRETO
     for (let i = 0; i < 10; i++) {
       const response = await axios.get(
         `${process.env.EVOLUTION_API_URL}/instance/qrcode/${instanceName}`,
@@ -56,7 +46,7 @@ export async function POST(req: Request) {
 
       const data = response.data;
 
-      console.log(`Tentativa ${i + 1}:`, data);
+      console.log("QR RAW:", data);
 
       base64 =
         data?.base64 ||
@@ -68,12 +58,12 @@ export async function POST(req: Request) {
         break;
       }
 
-      await sleep(2000); // espera 2s
+      await sleep(2000);
     }
 
     if (!base64 || base64 === true) {
       return NextResponse.json({
-        error: "QR não gerado ainda, tente novamente",
+        error: "QR ainda não gerado, aguarde alguns segundos",
       });
     }
 
@@ -83,7 +73,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       qrcode: base64,
-      instanceName,
     });
   } catch (error: any) {
     console.log("ERRO QR:", error.response?.data || error.message);
