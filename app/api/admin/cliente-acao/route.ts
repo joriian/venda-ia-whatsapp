@@ -32,30 +32,35 @@ export async function POST(req: Request) {
     }
 
     const instanceName = `cliente_${cliente_id}`.replace(/-/g, "");
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL!;
 
-    // 🔴 BLOQUEAR
     if (acao === "bloquear") {
       await supabase
         .from("clientes_ia_whatsapp")
         .update({ status: "vencido" })
         .eq("id", cliente_id);
 
+      await supabase
+        .from("instancias_evolution")
+        .update({ status: "bloqueado_manual" })
+        .eq("cliente_id", cliente_id);
+
       try {
-        await axios.post(
-          `${process.env.EVOLUTION_API_URL}/instance/logout`,
-          { instanceName },
+        await axios.delete(
+          `${process.env.EVOLUTION_API_URL}/instance/logout/${instanceName}`,
           {
             headers: {
               apikey: process.env.EVOLUTION_API_KEY!,
             },
           }
         );
-      } catch {}
+      } catch (error: any) {
+        console.log("BLOQUEIO LOGOUT:", error.response?.data || error.message);
+      }
 
       return NextResponse.json({ ok: true, acao: "bloqueado" });
     }
 
-    // 🟢 REATIVAR
     if (acao === "reativar") {
       const novaData = new Date();
       novaData.setMonth(novaData.getMonth() + 1);
@@ -68,46 +73,69 @@ export async function POST(req: Request) {
         })
         .eq("id", cliente_id);
 
+      await supabase
+        .from("instancias_evolution")
+        .update({ status: "reativado_manual" })
+        .eq("cliente_id", cliente_id);
+
       return NextResponse.json({ ok: true, acao: "reativado" });
     }
 
-    // 💳 GERAR LINK
     if (acao === "gerar_link") {
-      const { data } = await axios.post(
-        `${process.env.APP_URL}/api/pagamento/criar`,
-        {
-          cliente_id,
-        }
-      );
+      const response = await fetch(`${siteUrl}/api/pagamento/criar`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          clienteId: cliente_id,
+        }),
+      });
+
+      const data = await response.json();
 
       return NextResponse.json({
         ok: true,
-        link: data.link,
+        link: data.url,
       });
     }
 
-    // 📲 ENVIAR COBRANÇA
     if (acao === "cobrar") {
-      const { data } = await axios.post(
-        `${process.env.APP_URL}/api/pagamento/criar`,
-        {
-          cliente_id,
-        }
-      );
+      const response = await fetch(`${siteUrl}/api/pagamento/criar`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          clienteId: cliente_id,
+        }),
+      });
+
+      const data = await response.json();
+      const link = data.url;
+
+      if (!link) {
+        return NextResponse.json(
+          { error: "Erro ao gerar link de pagamento" },
+          { status: 500 }
+        );
+      }
 
       await axios.post(
         `${process.env.EVOLUTION_API_URL}/message/sendText/${instanceName}`,
         {
-          number: cliente.telefone,
-          text: `⚠️ Seu plano venceu.
+          number: String(cliente.telefone || "").replace(/\D/g, ""),
+          text: `Olá, ${cliente.nome || "cliente"}!
 
-Para continuar usando, realize o pagamento:
+Seu plano está pendente ou vencido.
 
-${data.link}`,
+Para renovar, pague pelo link abaixo:
+${link}`,
         },
         {
           headers: {
             apikey: process.env.EVOLUTION_API_KEY!,
+            "Content-Type": "application/json",
           },
         }
       );
@@ -117,8 +145,14 @@ ${data.link}`,
 
     return NextResponse.json({ error: "Ação inválida" }, { status: 400 });
   } catch (error: any) {
-    console.log("ERRO ACAO:", error.message);
+    console.log("ERRO ACAO:", error.response?.data || error.message);
 
-    return NextResponse.json({ error: true }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: true,
+        detalhe: error.response?.data || error.message,
+      },
+      { status: 500 }
+    );
   }
 }
