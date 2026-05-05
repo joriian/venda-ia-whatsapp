@@ -18,7 +18,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // 🔎 busca instância do cliente
     const { data: instancia } = await supabase
       .from("instancias_evolution")
       .select("*")
@@ -34,9 +33,10 @@ export async function POST(req: Request) {
 
     const instanceName = instancia.instance_name;
 
-    // 🔥 pede QR para Evolution
-    const { data } = await axios.get(
+    // 🔥 FORÇA CONEXÃO
+    await axios.post(
       `${process.env.EVOLUTION_API_URL}/instance/connect/${instanceName}`,
+      {},
       {
         headers: {
           apikey: process.env.EVOLUTION_API_KEY!,
@@ -44,9 +44,24 @@ export async function POST(req: Request) {
       }
     );
 
+    // 🔥 PEGA QR
+    const { data } = await axios.get(
+      `${process.env.EVOLUTION_API_URL}/instance/qrcode/${instanceName}`,
+      {
+        headers: {
+          apikey: process.env.EVOLUTION_API_KEY!,
+        },
+      }
+    );
+
+    if (!data?.base64) {
+      return NextResponse.json({
+        error: "QR ainda não gerado",
+      });
+    }
+
     return NextResponse.json({
-      qrcode: data?.base64,
-      instanceName,
+      qrcode: data.base64,
     });
   } catch (error: any) {
     console.log("ERRO QR:", error.response?.data || error.message);
