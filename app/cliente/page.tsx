@@ -6,6 +6,10 @@ export default function ClientePage() {
   const [qr, setQr] = useState<string | null>(null);
   const [instanceName, setInstanceName] = useState("");
   const [status, setStatus] = useState("Preparando área do cliente...");
+  const [conectado, setConectado] = useState(false);
+  const [numero, setNumero] = useState<string | null>(null);
+  const [nomePerfil, setNomePerfil] = useState<string | null>(null);
+  const [fotoPerfil, setFotoPerfil] = useState<string | null>(null);
   const [loadingQr, setLoadingQr] = useState(false);
   const [loadingReset, setLoadingReset] = useState(false);
 
@@ -20,7 +24,15 @@ export default function ClientePage() {
 
     const instance = `cliente_${clienteId.replace(/-/g, "")}`;
     setInstanceName(instance);
-    setStatus("Clique em gerar QR Code para conectar seu WhatsApp.");
+    setStatus("Verificando conexão...");
+
+    verificarStatus(instance);
+
+    const interval = setInterval(() => {
+      verificarStatus(instance);
+    }, 5000);
+
+    return () => clearInterval(interval);
   }, []);
 
   function ajustarQrCode(data: any) {
@@ -42,6 +54,46 @@ export default function ClientePage() {
     }
 
     return `data:image/png;base64,${texto}`;
+  }
+
+  async function verificarStatus(instance: string) {
+    try {
+      const res = await fetch("/api/instance/status", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ instanceName: instance }),
+      });
+
+      const data = await res.json();
+
+      if (data.conectado) {
+        setConectado(true);
+        setNumero(data.numero || null);
+        setNomePerfil(data.nomePerfil || null);
+        setFotoPerfil(data.fotoPerfil || null);
+        setQr(null);
+        setStatus("WhatsApp conectado com sucesso.");
+        return;
+      }
+
+      setConectado(false);
+      setNumero(null);
+      setNomePerfil(null);
+      setFotoPerfil(null);
+
+      if (data.status === "connecting") {
+        setStatus("Aguardando leitura do QR Code.");
+      } else if (data.status === "nao_encontrada") {
+        setStatus("Instância ainda não encontrada.");
+      } else {
+        setStatus("WhatsApp desconectado. Gere um QR Code para conectar.");
+      }
+    } catch (error) {
+      console.error(error);
+      setStatus("Erro ao verificar status.");
+    }
   }
 
   async function gerarQR() {
@@ -102,11 +154,12 @@ export default function ClientePage() {
       const data = await res.json();
 
       if (!res.ok || data.error) {
-        setStatus("Erro ao resetar conexão.");
+        setStatus("Não foi possível resetar. Talvez a instância já esteja desconectada.");
         return;
       }
 
-      setStatus("Conexão resetada. Agora clique em gerar QR Code novamente.");
+      setConectado(false);
+      setStatus("Conexão resetada. Agora gere um novo QR Code.");
     } catch (error) {
       console.error(error);
       setStatus("Erro ao resetar conexão.");
@@ -122,7 +175,29 @@ export default function ClientePage() {
 
         <p className="text-gray-300 text-sm mb-6">{status}</p>
 
-        {qr && (
+        {conectado && (
+          <div className="mb-6 bg-green-900/30 border border-green-600 rounded-xl p-4">
+            {fotoPerfil && (
+              <img
+                src={fotoPerfil}
+                alt="Foto do WhatsApp"
+                className="w-16 h-16 rounded-full mx-auto mb-3"
+              />
+            )}
+
+            <p className="text-green-400 font-bold">WhatsApp conectado</p>
+
+            {nomePerfil && (
+              <p className="text-sm text-gray-300 mt-1">{nomePerfil}</p>
+            )}
+
+            {numero && (
+              <p className="text-xs text-gray-400 mt-1">{numero}</p>
+            )}
+          </div>
+        )}
+
+        {qr && !conectado && (
           <div className="mb-6">
             <img
               src={qr}
@@ -133,13 +208,15 @@ export default function ClientePage() {
         )}
 
         <div className="grid gap-3">
-          <button
-            onClick={gerarQR}
-            disabled={loadingQr || loadingReset}
-            className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white py-3 rounded-lg font-semibold"
-          >
-            {loadingQr ? "Gerando..." : "Gerar QR Code"}
-          </button>
+          {!conectado && (
+            <button
+              onClick={gerarQR}
+              disabled={loadingQr || loadingReset}
+              className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white py-3 rounded-lg font-semibold"
+            >
+              {loadingQr ? "Gerando..." : "Gerar QR Code"}
+            </button>
+          )}
 
           <button
             onClick={resetar}
