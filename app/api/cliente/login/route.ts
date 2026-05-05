@@ -8,7 +8,10 @@ const supabase = createClient(
 
 export async function POST(req: Request) {
   try {
-    const { email, senha } = await req.json();
+    const body = await req.json();
+
+    const email = String(body.email || "").trim().toLowerCase();
+    const senha = String(body.senha || "").trim();
 
     if (!email || !senha) {
       return NextResponse.json(
@@ -17,14 +20,25 @@ export async function POST(req: Request) {
       );
     }
 
-    const { data: cliente } = await supabase
+    const { data: clientes, error } = await supabase
       .from("clientes_ia_whatsapp")
       .select("*")
-      .eq("email", email)
-      .eq("senha", senha)
-      .maybeSingle();
+      .ilike("email", email);
+
+    if (error) {
+      console.log("ERRO BUSCAR CLIENTE:", error);
+      return NextResponse.json(
+        { error: "Erro ao buscar cliente" },
+        { status: 500 }
+      );
+    }
+
+    const cliente = clientes?.find((c) => {
+      return String(c.senha || "").trim() === senha;
+    });
 
     if (!cliente) {
+      console.log("LOGIN NEGADO:", { email, senhaInformada: senha });
       return NextResponse.json(
         { error: "Email ou senha incorretos" },
         { status: 401 }
