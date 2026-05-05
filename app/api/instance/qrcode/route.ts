@@ -3,7 +3,18 @@ import axios from "axios";
 
 export async function POST(req: Request) {
   try {
-    const { instanceName } = await req.json();
+    const body = await req.json();
+
+    const instanceName = body.instanceName;
+
+    if (!instanceName) {
+      return NextResponse.json(
+        { error: "InstanceName não enviado" },
+        { status: 400 }
+      );
+    }
+
+    console.log("BUSCANDO QR DA INSTANCIA:", instanceName);
 
     const res = await axios.get(
       `${process.env.EVOLUTION_API_URL}/instance/connect/${instanceName}`,

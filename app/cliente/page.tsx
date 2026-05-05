@@ -5,22 +5,33 @@ import { useEffect, useState } from "react";
 export default function ClientePage() {
   const [qr, setQr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [instanceName, setInstanceName] = useState("");
 
-  const clienteId =
-    typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search).get("cliente")
-      : null;
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const clienteId = params.get("cliente");
 
-  const instanceName = clienteId
-    ? `cliente_${clienteId.replace(/-/g, "")}`
-    : "";
+    if (clienteId) {
+      const instance = `cliente_${clienteId.replace(/-/g, "")}`;
+      setInstanceName(instance);
+      console.log("INSTANCIA GERADA:", instance);
+    }
+  }, []);
 
   async function gerarQR() {
     try {
+      if (!instanceName) {
+        alert("Erro: instância inválida");
+        return;
+      }
+
       setLoading(true);
 
       const res = await fetch("/api/instance/qrcode", {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({ instanceName }),
       });
 
@@ -31,7 +42,7 @@ export default function ClientePage() {
       } else {
         alert("QR ainda não disponível, tente novamente");
       }
-    } catch {
+    } catch (err) {
       alert("Erro ao gerar QR");
     } finally {
       setLoading(false);
