@@ -12,10 +12,10 @@ export async function POST(req: Request) {
       );
     }
 
-    console.log("BUSCANDO QR:", instanceName);
+    console.log("RESETANDO INSTANCIA:", instanceName);
 
-    const res = await axios.get(
-      `${process.env.EVOLUTION_API_URL}/instance/connect/${instanceName}`,
+    await axios.delete(
+      `${process.env.EVOLUTION_API_URL}/instance/logout/${instanceName}`,
       {
         headers: {
           apikey: process.env.EVOLUTION_API_KEY!,
@@ -23,9 +23,9 @@ export async function POST(req: Request) {
       }
     );
 
-    return NextResponse.json(res.data);
+    return NextResponse.json({ ok: true });
   } catch (error: any) {
-    console.log("ERRO QR:", error.response?.data || error.message);
+    console.log("ERRO RESET:", error.response?.data || error.message);
 
     return NextResponse.json(
       {
