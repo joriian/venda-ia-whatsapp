@@ -12,10 +12,7 @@ export async function POST(req: Request) {
     const { clienteId } = await req.json();
 
     if (!clienteId) {
-      return NextResponse.json(
-        { error: "clienteId obrigatório" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "clienteId obrigatório" }, { status: 400 });
     }
 
     const { data: instancia } = await supabase
@@ -25,10 +22,7 @@ export async function POST(req: Request) {
       .single();
 
     if (!instancia) {
-      return NextResponse.json(
-        { error: "Instância não encontrada no banco" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Instância não encontrada no banco" }, { status: 404 });
     }
 
     const instanceName = instancia.instance_name;
@@ -43,16 +37,14 @@ export async function POST(req: Request) {
       }
     );
 
-    console.log("FETCH INSTANCES RAW:", data);
-
     const lista = Array.isArray(data) ? data : data?.instances || [];
 
     const instance = lista.find((item: any) => {
       const nome =
-        item?.instanceName ||
         item?.name ||
-        item?.instance?.instanceName ||
-        item?.instance?.name;
+        item?.instanceName ||
+        item?.instance?.name ||
+        item?.instance?.instanceName;
 
       return nome === instanceName;
     });
@@ -65,19 +57,28 @@ export async function POST(req: Request) {
     }
 
     const estado =
-      instance?.state ||
       instance?.connectionStatus ||
-      instance?.instance?.state ||
-      instance?.instance?.connectionStatus;
+      instance?.state ||
+      instance?.instance?.connectionStatus ||
+      instance?.instance?.state;
 
     const numero =
+      instance?.ownerJid ||
       instance?.owner ||
       instance?.number ||
+      instance?.instance?.ownerJid ||
       instance?.instance?.owner ||
       instance?.instance?.number ||
       null;
 
     if (estado === "open") {
+      await supabase
+        .from("instancias_evolution")
+        .update({
+          status: "conectado",
+        })
+        .eq("cliente_id", clienteId);
+
       return NextResponse.json({
         conectado: true,
         estado,
@@ -95,9 +96,9 @@ export async function POST(req: Request) {
       instance?.instance?.base64;
 
     if (qrcode && qrcode !== true) {
-      let base64 = qrcode;
+      let base64 = String(qrcode);
 
-      if (!String(base64).startsWith("data:image")) {
+      if (!base64.startsWith("data:image")) {
         base64 = `data:image/png;base64,${base64}`;
       }
 
