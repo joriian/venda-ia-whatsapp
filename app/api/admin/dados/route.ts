@@ -29,31 +29,6 @@ async function validarAdmin(req: Request) {
   return admin;
 }
 
-function normalizarStatus(status: any) {
-  const s = String(status || "").toLowerCase();
-
-  if (s === "approved" || s === "aprovado" || s === "ativo") return "ativo";
-  if (s === "pending" || s === "pendente") return "aguardando_pagamento";
-  if (s === "rejected" || s === "recusado") return "aguardando_pagamento";
-  if (s === "cancelado" || s === "cancelled") return "aguardando_pagamento";
-  if (s === "vencido") return "vencido";
-
-  return "aguardando_pagamento";
-}
-
-async function buscarPagamentosCliente(clienteId: string) {
-  try {
-    const { data } = await supabase
-      .from("pagamentos_ia_whatsapp")
-      .select("*")
-      .eq("cliente_id", clienteId);
-
-    return data || [];
-  } catch {
-    return [];
-  }
-}
-
 function temPagamentoAprovado(pagamentos: any[]) {
   return pagamentos.some((p) => {
     const status = String(p.status || "").toLowerCase();
@@ -68,34 +43,38 @@ function temPagamentoAprovado(pagamentos: any[]) {
 
 function estaVencido(dataExpiracao: any) {
   if (!dataExpiracao) return false;
-
-  const expira = new Date(dataExpiracao);
-  const hoje = new Date();
-
-  return expira < hoje;
+  return new Date(dataExpiracao) < new Date();
 }
 
-async function corrigirStatusCliente(cliente: any, servicos: any[]) {
-  const pagamentos = await buscarPagamentosCliente(cliente.id);
+async function buscarPagamentos(clienteId: string) {
+  const { data, error } = await supabase
+    .from("pagamentos_ia_whatsapp")
+    .select("*")
+    .eq("cliente_id", clienteId)
+    .order("criado_em", { ascending: false })
+    .limit(5);
+
+  if (error) {
+    console.log("ERRO BUSCAR PAGAMENTOS ADMIN:", error.message);
+    return [];
+  }
+
+  return data || [];
+}
+
+async function corrigirStatus(cliente: any, servicos: any[], pagamentos: any[]) {
   const aprovado = temPagamentoAprovado(pagamentos);
   const vencido = estaVencido(cliente.data_expiracao);
 
   let statusCorreto = "aguardando_pagamento";
 
-  if (vencido) {
-    statusCorreto = "vencido";
-  } else if (aprovado) {
-    statusCorreto = "ativo";
-  } else {
-    statusCorreto = "aguardando_pagamento";
-  }
+  if (vencido) statusCorreto = "vencido";
+  else if (aprovado) statusCorreto = "ativo";
 
   if (cliente.status !== statusCorreto) {
     await supabase
       .from("clientes_ia_whatsapp")
-      .update({
-        status: statusCorreto,
-      })
+      .update({ status: statusCorreto })
       .eq("id", cliente.id);
 
     cliente.status = statusCorreto;
@@ -103,15 +82,7 @@ async function corrigirStatusCliente(cliente: any, servicos: any[]) {
 
   const servicosCorrigidos = await Promise.all(
     (servicos || []).map(async (servico: any) => {
-      let statusServico = normalizarStatus(servico.status);
-
-      if (vencido) {
-        statusServico = "vencido";
-      } else if (aprovado) {
-        statusServico = "ativo";
-      } else {
-        statusServico = "aguardando_pagamento";
-      }
+      let statusServico = statusCorreto;
 
       if (servico.id && servico.id !== "principal" && servico.status !== statusServico) {
         await supabase
@@ -156,7 +127,7 @@ export async function GET(req: Request) {
       );
     }
 
-    const clientesComServicos = await Promise.all(
+    const clientesCompletos = await Promise.all(
       (clientes || []).map(async (cliente: any) => {
         const { data: servicos } = await supabase
           .from("cliente_servicos")
@@ -212,18 +183,20 @@ export async function GET(req: Request) {
           ];
         }
 
-        const corrigido = await corrigirStatusCliente(cliente, servicosFinal);
+        const pagamentos = await buscarPagamentos(cliente.id);
+        const corrigido = await corrigirStatus(cliente, servicosFinal, pagamentos);
 
         return {
           ...corrigido.cliente,
           servicos_cliente: corrigido.servicos,
+          pagamentos_cliente: pagamentos,
         };
       })
     );
 
     return NextResponse.json({
       ok: true,
-      clientes: clientesComServicos,
+      clientes: clientesCompletos,
     });
   } catch (error: any) {
     console.log("ERRO ADMIN DADOS:", error.message);
