@@ -12,6 +12,10 @@ export default function AdminPage() {
   const [instancias, setInstancias] = useState<any[]>([]);
   const [usuariosAdmin, setUsuariosAdmin] = useState<any[]>([]);
   const [dashboard, setDashboard] = useState<any>(null);
+
+  const [servicos, setServicos] = useState<any[]>([]);
+  const [termos, setTermos] = useState<any>(null);
+
   const [loading, setLoading] = useState(false);
 
   const [buscaCliente, setBuscaCliente] = useState("");
@@ -22,10 +26,23 @@ export default function AdminPage() {
   const [filtroStatusInstancia, setFiltroStatusInstancia] = useState("todos");
   const [paginaInstancias, setPaginaInstancias] = useState(1);
 
+  const [buscaUsuarioAdmin, setBuscaUsuarioAdmin] = useState("");
+
   const [novoAdminNome, setNovoAdminNome] = useState("");
   const [novoAdminEmail, setNovoAdminEmail] = useState("");
   const [novoAdminSenha, setNovoAdminSenha] = useState("");
   const [novoAdminNivel, setNovoAdminNivel] = useState("suporte");
+
+  const [novoServicoNome, setNovoServicoNome] = useState("");
+  const [novoServicoSlug, setNovoServicoSlug] = useState("");
+  const [novoServicoDescricao, setNovoServicoDescricao] = useState("");
+
+  const [novoPlanoServicoId, setNovoPlanoServicoId] = useState("");
+  const [novoPlanoNome, setNovoPlanoNome] = useState("");
+  const [novoPlanoDescricao, setNovoPlanoDescricao] = useState("");
+  const [novoPlanoValor, setNovoPlanoValor] = useState("");
+  const [novoPlanoMeses, setNovoPlanoMeses] = useState("1");
+  const [novoPlanoDestaque, setNovoPlanoDestaque] = useState(false);
 
   const porPagina = 10;
 
@@ -101,7 +118,11 @@ export default function AdminPage() {
     await carregarDashboard(token);
     await carregarInstancias();
 
-    if (ehDono(adminParam)) {
+    if (adminParam?.nivel === "dono" || adminParam?.nivel === "admin") {
+      await carregarCatalogo(token);
+    }
+
+    if (adminParam?.nivel === "dono") {
       await carregarUsuariosAdmin(token);
     }
   }
@@ -138,7 +159,32 @@ export default function AdminPage() {
     const data = await res.json();
 
     if (Array.isArray(data)) {
-      setInstancias(data);
+      const ordenadas = [...data].sort((a, b) => {
+        if (a.conectado && !b.conectado) return -1;
+        if (!a.conectado && b.conectado) return 1;
+        return String(a.instance || "").localeCompare(String(b.instance || ""));
+      });
+
+      setInstancias(ordenadas);
+    }
+  }
+
+  async function carregarCatalogo(tokenParam?: string) {
+    const token = tokenParam || adminToken;
+
+    const res = await fetch("/api/admin/catalogo", {
+      headers: { "x-admin-token": token },
+    });
+
+    const data = await res.json();
+
+    if (res.ok && data.ok) {
+      setServicos(data.servicos || []);
+      setTermos(data.termos || null);
+
+      if (!novoPlanoServicoId && data.servicos?.[0]?.id) {
+        setNovoPlanoServicoId(data.servicos[0].id);
+      }
     }
   }
 
@@ -154,6 +200,162 @@ export default function AdminPage() {
     if (res.ok && data.ok) {
       setUsuariosAdmin(data.usuarios || []);
     }
+  }
+
+  async function criarServico() {
+    if (!novoServicoNome || !novoServicoSlug) {
+      alert("Informe nome e slug do serviço.");
+      return;
+    }
+
+    const res = await fetch("/api/admin/catalogo", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-token": adminToken,
+      },
+      body: JSON.stringify({
+        acao: "criar_servico",
+        nome: novoServicoNome,
+        slug: novoServicoSlug,
+        descricao: novoServicoDescricao,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      alert(data.error || "Erro ao criar serviço.");
+      return;
+    }
+
+    setNovoServicoNome("");
+    setNovoServicoSlug("");
+    setNovoServicoDescricao("");
+
+    alert("Serviço criado.");
+    await carregarCatalogo();
+  }
+
+  async function atualizarServico(servico: any) {
+    const res = await fetch("/api/admin/catalogo", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-token": adminToken,
+      },
+      body: JSON.stringify({
+        acao: "atualizar_servico",
+        ...servico,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      alert(data.error || "Erro ao atualizar serviço.");
+      return;
+    }
+
+    alert("Serviço atualizado.");
+    await carregarCatalogo();
+  }
+
+  async function criarPlanoCatalogo() {
+    if (!novoPlanoServicoId || !novoPlanoNome || !novoPlanoValor || !novoPlanoMeses) {
+      alert("Informe serviço, nome, valor e meses.");
+      return;
+    }
+
+    const res = await fetch("/api/admin/catalogo", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-token": adminToken,
+      },
+      body: JSON.stringify({
+        acao: "criar_plano",
+        servico_id: novoPlanoServicoId,
+        nome: novoPlanoNome,
+        descricao: novoPlanoDescricao,
+        valor: novoPlanoValor,
+        meses: novoPlanoMeses,
+        destaque: novoPlanoDestaque,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      alert(data.error || "Erro ao criar plano.");
+      return;
+    }
+
+    setNovoPlanoNome("");
+    setNovoPlanoDescricao("");
+    setNovoPlanoValor("");
+    setNovoPlanoMeses("1");
+    setNovoPlanoDestaque(false);
+
+    alert("Plano criado.");
+    await carregarCatalogo();
+    await recarregarDados();
+  }
+
+  async function atualizarPlanoCatalogo(plano: any) {
+    const res = await fetch("/api/admin/catalogo", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-token": adminToken,
+      },
+      body: JSON.stringify({
+        acao: "atualizar_plano",
+        ...plano,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      alert(data.error || "Erro ao atualizar plano.");
+      return;
+    }
+
+    alert("Plano atualizado.");
+    await carregarCatalogo();
+    await recarregarDados();
+  }
+
+  async function atualizarTermos() {
+    if (!termos?.titulo || !termos?.conteudo) {
+      alert("Informe título e conteúdo dos termos.");
+      return;
+    }
+
+    const res = await fetch("/api/admin/catalogo", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-token": adminToken,
+      },
+      body: JSON.stringify({
+        acao: "atualizar_termos",
+        titulo: termos.titulo,
+        conteudo: termos.conteudo,
+        ativo: termos.ativo,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      alert(data.error || "Erro ao atualizar termos.");
+      return;
+    }
+
+    alert("Termos atualizados.");
+    await carregarCatalogo();
   }
 
   async function criarUsuarioAdmin() {
@@ -189,7 +391,7 @@ export default function AdminPage() {
     setNovoAdminSenha("");
     setNovoAdminNivel("suporte");
 
-    alert("Usuário criado com sucesso.");
+    alert("Usuário criado.");
     await carregarUsuariosAdmin();
   }
 
@@ -248,35 +450,8 @@ export default function AdminPage() {
       return;
     }
 
-    alert("Senha alterada com sucesso.");
+    alert("Senha alterada.");
     await carregarUsuariosAdmin();
-  }
-
-  async function salvarPlano(plano: any) {
-    if (!podeEditarPlanos()) {
-      alert("Seu nível de acesso não permite alterar planos.");
-      return;
-    }
-
-    setLoading(true);
-
-    const res = await fetch("/api/admin/planos", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-admin-token": adminToken,
-      },
-      body: JSON.stringify(plano),
-    });
-
-    setLoading(false);
-
-    if (!res.ok) {
-      alert("Erro ao salvar plano");
-      return;
-    }
-
-    alert("Plano salvo");
   }
 
   async function acaoCliente(id: string, acao: string) {
@@ -388,10 +563,24 @@ export default function AdminPage() {
     paginaClientes * porPagina
   );
 
+  const usuariosAdminFiltrados = useMemo(() => {
+    const busca = buscaUsuarioAdmin.toLowerCase().trim();
+
+    if (!busca) return [];
+
+    return usuariosAdmin.filter((u) => {
+      const texto = [u.nome, u.email, u.nivel, u.ativo ? "ativo" : "inativo"]
+        .join(" ")
+        .toLowerCase();
+
+      return texto.includes(busca);
+    });
+  }, [usuariosAdmin, buscaUsuarioAdmin]);
+
   const instanciasFiltradas = useMemo(() => {
     const busca = buscaInstancia.toLowerCase().trim();
 
-    return instancias.filter((instancia) => {
+    const filtradas = instancias.filter((instancia) => {
       const texto = [
         instancia.instance,
         instancia.status,
@@ -408,6 +597,12 @@ export default function AdminPage() {
         (filtroStatusInstancia === "desconectado" && !instancia.conectado);
 
       return bateBusca && bateStatus;
+    });
+
+    return filtradas.sort((a, b) => {
+      if (a.conectado && !b.conectado) return -1;
+      if (!a.conectado && b.conectado) return 1;
+      return String(a.instance || "").localeCompare(String(b.instance || ""));
     });
   }, [instancias, buscaInstancia, filtroStatusInstancia]);
 
@@ -477,6 +672,311 @@ export default function AdminPage() {
         </section>
       )}
 
+      {(admin?.nivel === "dono" || admin?.nivel === "admin") && (
+        <section className="mb-10 bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
+          <h2 className="text-2xl font-bold mb-4">Serviços, planos e termos</h2>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div>
+              <h3 className="font-bold mb-3">Criar serviço</h3>
+
+              <div className="grid gap-3">
+                <input
+                  value={novoServicoNome}
+                  onChange={(e) => setNovoServicoNome(e.target.value)}
+                  placeholder="Nome do serviço"
+                  className="p-3 rounded bg-zinc-800 border border-zinc-700"
+                />
+
+                <input
+                  value={novoServicoSlug}
+                  onChange={(e) => setNovoServicoSlug(e.target.value)}
+                  placeholder="slug-do-servico"
+                  className="p-3 rounded bg-zinc-800 border border-zinc-700"
+                />
+
+                <textarea
+                  value={novoServicoDescricao}
+                  onChange={(e) => setNovoServicoDescricao(e.target.value)}
+                  placeholder="Descrição do serviço"
+                  className="p-3 rounded bg-zinc-800 border border-zinc-700 min-h-24"
+                />
+
+                <button
+                  onClick={criarServico}
+                  className="bg-green-600 hover:bg-green-700 py-3 rounded font-bold"
+                >
+                  Criar serviço
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-bold mb-3">Criar plano</h3>
+
+              <div className="grid gap-3">
+                <select
+                  value={novoPlanoServicoId}
+                  onChange={(e) => setNovoPlanoServicoId(e.target.value)}
+                  className="p-3 rounded bg-zinc-800 border border-zinc-700"
+                >
+                  {servicos.map((servico) => (
+                    <option key={servico.id} value={servico.id}>
+                      {servico.nome}
+                    </option>
+                  ))}
+                </select>
+
+                <input
+                  value={novoPlanoNome}
+                  onChange={(e) => setNovoPlanoNome(e.target.value)}
+                  placeholder="Nome do plano"
+                  className="p-3 rounded bg-zinc-800 border border-zinc-700"
+                />
+
+                <textarea
+                  value={novoPlanoDescricao}
+                  onChange={(e) => setNovoPlanoDescricao(e.target.value)}
+                  placeholder="Descrição do plano"
+                  className="p-3 rounded bg-zinc-800 border border-zinc-700 min-h-20"
+                />
+
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    value={novoPlanoValor}
+                    onChange={(e) => setNovoPlanoValor(e.target.value)}
+                    placeholder="Valor"
+                    className="p-3 rounded bg-zinc-800 border border-zinc-700"
+                  />
+
+                  <input
+                    value={novoPlanoMeses}
+                    onChange={(e) => setNovoPlanoMeses(e.target.value)}
+                    placeholder="Meses"
+                    className="p-3 rounded bg-zinc-800 border border-zinc-700"
+                  />
+                </div>
+
+                <label className="flex gap-2 items-center">
+                  <input
+                    type="checkbox"
+                    checked={novoPlanoDestaque}
+                    onChange={(e) => setNovoPlanoDestaque(e.target.checked)}
+                  />
+                  Plano em destaque
+                </label>
+
+                <button
+                  onClick={criarPlanoCatalogo}
+                  className="bg-blue-600 hover:bg-blue-700 py-3 rounded font-bold"
+                >
+                  Criar plano
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-8 grid gap-6">
+            {servicos.map((servico, sIndex) => (
+              <div key={servico.id} className="border border-zinc-700 rounded-xl p-4">
+                <h3 className="font-bold mb-3">Serviço</h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
+                  <input
+                    value={servico.nome}
+                    onChange={(e) => {
+                      const novo = [...servicos];
+                      novo[sIndex].nome = e.target.value;
+                      setServicos(novo);
+                    }}
+                    className="p-3 rounded bg-zinc-800 border border-zinc-700"
+                  />
+
+                  <input
+                    value={servico.slug}
+                    onChange={(e) => {
+                      const novo = [...servicos];
+                      novo[sIndex].slug = e.target.value;
+                      setServicos(novo);
+                    }}
+                    className="p-3 rounded bg-zinc-800 border border-zinc-700"
+                  />
+
+                  <input
+                    value={servico.ordem || 0}
+                    onChange={(e) => {
+                      const novo = [...servicos];
+                      novo[sIndex].ordem = Number(e.target.value);
+                      setServicos(novo);
+                    }}
+                    className="p-3 rounded bg-zinc-800 border border-zinc-700"
+                  />
+
+                  <label className="flex gap-2 items-center">
+                    <input
+                      type="checkbox"
+                      checked={servico.ativo}
+                      onChange={(e) => {
+                        const novo = [...servicos];
+                        novo[sIndex].ativo = e.target.checked;
+                        setServicos(novo);
+                      }}
+                    />
+                    Ativo
+                  </label>
+
+                  <button
+                    onClick={() => atualizarServico(servico)}
+                    className="bg-blue-600 hover:bg-blue-700 py-3 rounded font-bold"
+                  >
+                    Salvar serviço
+                  </button>
+                </div>
+
+                <textarea
+                  value={servico.descricao || ""}
+                  onChange={(e) => {
+                    const novo = [...servicos];
+                    novo[sIndex].descricao = e.target.value;
+                    setServicos(novo);
+                  }}
+                  className="w-full p-3 rounded bg-zinc-800 border border-zinc-700 min-h-20 mb-4"
+                />
+
+                <h4 className="font-bold mb-3">Planos deste serviço</h4>
+
+                <div className="grid gap-3">
+                  {(servico.planos || []).map((plano: any, pIndex: number) => (
+                    <div
+                      key={plano.id}
+                      className="grid grid-cols-1 md:grid-cols-8 gap-3 bg-zinc-800 border border-zinc-700 rounded-xl p-3"
+                    >
+                      <input
+                        value={plano.nome}
+                        onChange={(e) => {
+                          const novo = [...servicos];
+                          novo[sIndex].planos[pIndex].nome = e.target.value;
+                          setServicos(novo);
+                        }}
+                        className="p-2 rounded bg-zinc-900 border border-zinc-700"
+                      />
+
+                      <input
+                        value={plano.valor}
+                        onChange={(e) => {
+                          const novo = [...servicos];
+                          novo[sIndex].planos[pIndex].valor = e.target.value;
+                          setServicos(novo);
+                        }}
+                        className="p-2 rounded bg-zinc-900 border border-zinc-700"
+                      />
+
+                      <input
+                        value={plano.meses}
+                        onChange={(e) => {
+                          const novo = [...servicos];
+                          novo[sIndex].planos[pIndex].meses = Number(e.target.value);
+                          setServicos(novo);
+                        }}
+                        className="p-2 rounded bg-zinc-900 border border-zinc-700"
+                      />
+
+                      <input
+                        value={plano.ordem || 0}
+                        onChange={(e) => {
+                          const novo = [...servicos];
+                          novo[sIndex].planos[pIndex].ordem = Number(e.target.value);
+                          setServicos(novo);
+                        }}
+                        className="p-2 rounded bg-zinc-900 border border-zinc-700"
+                      />
+
+                      <label className="flex gap-2 items-center">
+                        <input
+                          type="checkbox"
+                          checked={plano.ativo}
+                          onChange={(e) => {
+                            const novo = [...servicos];
+                            novo[sIndex].planos[pIndex].ativo = e.target.checked;
+                            setServicos(novo);
+                          }}
+                        />
+                        Ativo
+                      </label>
+
+                      <label className="flex gap-2 items-center">
+                        <input
+                          type="checkbox"
+                          checked={plano.destaque}
+                          onChange={(e) => {
+                            const novo = [...servicos];
+                            novo[sIndex].planos[pIndex].destaque = e.target.checked;
+                            setServicos(novo);
+                          }}
+                        />
+                        Destaque
+                      </label>
+
+                      <button
+                        onClick={() => atualizarPlanoCatalogo(plano)}
+                        className="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded"
+                      >
+                        Salvar
+                      </button>
+
+                      <textarea
+                        value={plano.descricao || ""}
+                        onChange={(e) => {
+                          const novo = [...servicos];
+                          novo[sIndex].planos[pIndex].descricao = e.target.value;
+                          setServicos(novo);
+                        }}
+                        placeholder="Descrição"
+                        className="md:col-span-8 p-2 rounded bg-zinc-900 border border-zinc-700"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {termos && (
+            <div className="mt-8 border border-zinc-700 rounded-xl p-4">
+              <h3 className="font-bold mb-3">Termos de uso</h3>
+
+              <input
+                value={termos.titulo || ""}
+                onChange={(e) => setTermos({ ...termos, titulo: e.target.value })}
+                className="w-full p-3 rounded bg-zinc-800 border border-zinc-700 mb-3"
+              />
+
+              <textarea
+                value={termos.conteudo || ""}
+                onChange={(e) => setTermos({ ...termos, conteudo: e.target.value })}
+                className="w-full p-3 rounded bg-zinc-800 border border-zinc-700 min-h-40 mb-3"
+              />
+
+              <label className="flex gap-2 items-center mb-3">
+                <input
+                  type="checkbox"
+                  checked={termos.ativo}
+                  onChange={(e) => setTermos({ ...termos, ativo: e.target.checked })}
+                />
+                Termos ativos
+              </label>
+
+              <button
+                onClick={atualizarTermos}
+                className="bg-blue-600 hover:bg-blue-700 px-5 py-3 rounded font-bold"
+              >
+                Salvar termos
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+
       {ehDono() && (
         <section className="mb-10 bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
           <h2 className="text-2xl font-bold mb-4">Usuários administrativos</h2>
@@ -523,170 +1023,64 @@ export default function AdminPage() {
             </button>
           </div>
 
-          <div className="overflow-x-auto border border-zinc-700 rounded-xl">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-zinc-700 text-left bg-zinc-800">
-                  <th className="p-3">Nome</th>
-                  <th className="p-3">Email</th>
-                  <th className="p-3">Nível</th>
-                  <th className="p-3">Ativo</th>
-                  <th className="p-3">Ações</th>
-                </tr>
-              </thead>
+          <input
+            value={buscaUsuarioAdmin}
+            onChange={(e) => setBuscaUsuarioAdmin(e.target.value)}
+            placeholder="Buscar usuário admin para exibir a lista..."
+            className="w-full p-3 rounded bg-zinc-800 border border-zinc-700 mb-4"
+          />
 
-              <tbody>
-                {usuariosAdmin.map((usuario, index) => (
-                  <tr key={usuario.id} className="border-b border-zinc-800">
-                    <td className="p-3">
-                      <input
-                        value={usuario.nome}
-                        onChange={(e) => {
-                          const novo = [...usuariosAdmin];
-                          novo[index].nome = e.target.value;
-                          setUsuariosAdmin(novo);
-                        }}
-                        className="p-2 rounded bg-zinc-800 border border-zinc-700"
-                      />
-                    </td>
-
-                    <td className="p-3">
-                      <input
-                        value={usuario.email}
-                        onChange={(e) => {
-                          const novo = [...usuariosAdmin];
-                          novo[index].email = e.target.value;
-                          setUsuariosAdmin(novo);
-                        }}
-                        className="p-2 rounded bg-zinc-800 border border-zinc-700"
-                      />
-                    </td>
-
-                    <td className="p-3">
-                      <select
-                        value={usuario.nivel}
-                        onChange={(e) => {
-                          const novo = [...usuariosAdmin];
-                          novo[index].nivel = e.target.value;
-                          setUsuariosAdmin(novo);
-                        }}
-                        className="p-2 rounded bg-zinc-800 border border-zinc-700"
-                      >
-                        <option value="suporte">Suporte</option>
-                        <option value="financeiro">Financeiro</option>
-                        <option value="admin">Admin</option>
-                        <option value="dono">Dono</option>
-                      </select>
-                    </td>
-
-                    <td className="p-3">
-                      <input
-                        type="checkbox"
-                        checked={usuario.ativo}
-                        onChange={(e) => {
-                          const novo = [...usuariosAdmin];
-                          novo[index].ativo = e.target.checked;
-                          setUsuariosAdmin(novo);
-                        }}
-                      />
-                    </td>
-
-                    <td className="p-3">
-                      <div className="flex gap-2 flex-wrap">
-                        <button
-                          onClick={() => atualizarUsuarioAdmin(usuario)}
-                          className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded"
-                        >
-                          Salvar
-                        </button>
-
-                        <button
-                          onClick={() => alterarSenhaAdmin(usuario)}
-                          className="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded"
-                        >
-                          Alterar senha
-                        </button>
-                      </div>
-                    </td>
+          {buscaUsuarioAdmin.trim() && (
+            <div className="overflow-x-auto border border-zinc-700 rounded-xl">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-700 text-left bg-zinc-800">
+                    <th className="p-3">Nome</th>
+                    <th className="p-3">Email</th>
+                    <th className="p-3">Nível</th>
+                    <th className="p-3">Ativo</th>
+                    <th className="p-3">Ações</th>
                   </tr>
-                ))}
+                </thead>
 
-                {usuariosAdmin.length === 0 && (
-                  <tr>
-                    <td className="p-5 text-center text-gray-400" colSpan={5}>
-                      Nenhum usuário administrativo encontrado.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
+                <tbody>
+                  {usuariosAdminFiltrados.map((usuario) => (
+                    <tr key={usuario.id} className="border-b border-zinc-800">
+                      <td className="p-3">{usuario.nome}</td>
+                      <td className="p-3">{usuario.email}</td>
+                      <td className="p-3">{usuario.nivel}</td>
+                      <td className="p-3">{usuario.ativo ? "Sim" : "Não"}</td>
+                      <td className="p-3">
+                        <div className="flex gap-2 flex-wrap">
+                          <button
+                            onClick={() => atualizarUsuarioAdmin(usuario)}
+                            className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded"
+                          >
+                            Salvar
+                          </button>
 
-      {podeEditarPlanos() && (
-        <section className="mb-10">
-          <h2 className="text-2xl font-bold mb-4">Planos</h2>
+                          <button
+                            onClick={() => alterarSenhaAdmin(usuario)}
+                            className="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded"
+                          >
+                            Alterar senha
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
 
-          <div className="grid gap-4">
-            {planos.map((plano, index) => (
-              <div
-                key={plano.id}
-                className="bg-zinc-900 border border-zinc-700 rounded-xl p-4 grid grid-cols-1 md:grid-cols-5 gap-3 items-center"
-              >
-                <input
-                  value={plano.nome}
-                  onChange={(e) => {
-                    const novo = [...planos];
-                    novo[index].nome = e.target.value;
-                    setPlanos(novo);
-                  }}
-                  className="p-3 rounded bg-zinc-800 border border-zinc-700"
-                />
-
-                <input
-                  value={plano.valor}
-                  onChange={(e) => {
-                    const novo = [...planos];
-                    novo[index].valor = e.target.value;
-                    setPlanos(novo);
-                  }}
-                  className="p-3 rounded bg-zinc-800 border border-zinc-700"
-                />
-
-                <input
-                  value={plano.meses}
-                  onChange={(e) => {
-                    const novo = [...planos];
-                    novo[index].meses = Number(e.target.value);
-                    setPlanos(novo);
-                  }}
-                  className="p-3 rounded bg-zinc-800 border border-zinc-700"
-                />
-
-                <label className="flex gap-2 items-center">
-                  <input
-                    type="checkbox"
-                    checked={plano.ativo}
-                    onChange={(e) => {
-                      const novo = [...planos];
-                      novo[index].ativo = e.target.checked;
-                      setPlanos(novo);
-                    }}
-                  />
-                  Ativo
-                </label>
-
-                <button
-                  onClick={() => salvarPlano(plano)}
-                  disabled={loading}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 py-3 rounded font-bold"
-                >
-                  Salvar
-                </button>
-              </div>
-            ))}
-          </div>
+                  {usuariosAdminFiltrados.length === 0 && (
+                    <tr>
+                      <td className="p-5 text-center text-gray-400" colSpan={5}>
+                        Nenhum usuário encontrado.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       )}
 
@@ -848,46 +1242,48 @@ export default function AdminPage() {
           </div>
         </div>
 
-        <div className="grid gap-4">
-          {instanciasPaginadas.map((instancia, index) => (
-            <div
-              key={index}
-              className={`rounded-xl border p-4 ${
-                instancia.conectado
-                  ? "border-green-600 bg-green-900/20"
-                  : "border-red-600 bg-red-900/20"
-              }`}
-            >
-              <p>
-                <strong>Instância:</strong> {instancia.instance}
-              </p>
+        <div className="overflow-x-auto bg-zinc-900 border border-zinc-700 rounded-xl">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-zinc-700 text-left">
+                <th className="p-3">Status</th>
+                <th className="p-3">Instância</th>
+                <th className="p-3">Nome</th>
+                <th className="p-3">Número</th>
+                <th className="p-3">Estado</th>
+              </tr>
+            </thead>
 
-              <p>
-                <strong>Status:</strong>{" "}
-                <span className={instancia.conectado ? "text-green-400" : "text-red-400"}>
-                  {instancia.conectado ? "CONECTADO" : "DESCONECTADO"}
-                </span>
-              </p>
+            <tbody>
+              {instanciasPaginadas.map((instancia, index) => (
+                <tr key={index} className="border-b border-zinc-800">
+                  <td className="p-3">
+                    <span
+                      className={`px-3 py-1 rounded-full border text-xs font-bold ${
+                        instancia.conectado
+                          ? "bg-green-900/40 text-green-400 border-green-700"
+                          : "bg-red-900/40 text-red-400 border-red-700"
+                      }`}
+                    >
+                      {instancia.conectado ? "Conectada" : "Desconectada"}
+                    </span>
+                  </td>
+                  <td className="p-3">{instancia.instance}</td>
+                  <td className="p-3">{instancia.nome || "-"}</td>
+                  <td className="p-3">{instancia.numero || "-"}</td>
+                  <td className="p-3">{instancia.status || "-"}</td>
+                </tr>
+              ))}
 
-              {instancia.nome && (
-                <p>
-                  <strong>Nome:</strong> {instancia.nome}
-                </p>
+              {instanciasPaginadas.length === 0 && (
+                <tr>
+                  <td className="p-5 text-center text-gray-400" colSpan={5}>
+                    Nenhuma instância encontrada.
+                  </td>
+                </tr>
               )}
-
-              {instancia.numero && (
-                <p>
-                  <strong>Número:</strong> {instancia.numero}
-                </p>
-              )}
-            </div>
-          ))}
-
-          {instanciasPaginadas.length === 0 && (
-            <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 text-center text-gray-400">
-              Nenhuma instância encontrada.
-            </div>
-          )}
+            </tbody>
+          </table>
         </div>
 
         <Paginacao
