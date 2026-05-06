@@ -130,6 +130,12 @@ export default function ClientePage() {
       pending: "Pendente",
       rejected: "Recusado",
       cancelado: "Cancelado",
+      connecting: "Conectando",
+      open: "Conectado",
+      conectado: "Conectado",
+      close: "Desconectado",
+      desconectado: "Desconectado",
+      qrcode: "Aguardando QR Code",
     };
 
     return mapa[status] || status || "-";
@@ -211,7 +217,7 @@ export default function ClientePage() {
               <Card titulo="Pagamentos" valor={pagamentos.length} />
               <Card
                 titulo="WhatsApp"
-                valor={instancia?.status || "Não conectado"}
+                valor={statusPt(instancia?.status || "desconectado")}
               />
             </div>
 
@@ -249,7 +255,7 @@ export default function ClientePage() {
                       </p>
                     </div>
 
-                    <Status status={item.status} />
+                    <Status status={statusPt(item.status)} />
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
@@ -271,7 +277,9 @@ export default function ClientePage() {
 
         {aba === "planos" && (
           <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
-            <h2 className="text-2xl font-bold mb-2">Contratar ou renovar serviços</h2>
+            <h2 className="text-2xl font-bold mb-2">
+              Contratar ou renovar serviços
+            </h2>
 
             <p className="text-gray-400 text-sm mb-6">
               Escolha um serviço e um plano para adicionar à sua conta.
@@ -328,6 +336,12 @@ export default function ClientePage() {
                   </div>
                 </div>
               ))}
+
+              {catalogo.length === 0 && (
+                <p className="text-gray-400">
+                  Nenhum serviço disponível para contratação.
+                </p>
+              )}
             </div>
           </section>
         )}
@@ -423,7 +437,7 @@ function Info({ label, value }: any) {
 }
 
 function Status({ status }: any) {
-  const ativo = status === "ativo";
+  const ativo = status === "Ativo";
 
   return (
     <span

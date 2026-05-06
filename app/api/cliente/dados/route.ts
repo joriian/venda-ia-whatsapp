@@ -38,7 +38,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Sessão inválida" }, { status: 401 });
     }
 
-    const { data: servicosCliente } = await supabase
+    let { data: servicosCliente } = await supabase
       .from("cliente_servicos")
       .select(`
         *,
@@ -47,6 +47,35 @@ export async function POST(req: Request) {
       `)
       .eq("cliente_id", cliente.id)
       .order("created_at", { ascending: false });
+
+    if ((!servicosCliente || servicosCliente.length === 0) && cliente.servico_id) {
+      const { data: servico } = await supabase
+        .from("servicos_ia")
+        .select("*")
+        .eq("id", cliente.servico_id)
+        .maybeSingle();
+
+      const { data: plano } = await supabase
+        .from("planos")
+        .select("*")
+        .eq("id", cliente.plano_id)
+        .maybeSingle();
+
+      servicosCliente = [
+        {
+          id: "principal",
+          cliente_id: cliente.id,
+          servico_id: cliente.servico_id,
+          plano_id: cliente.plano_id,
+          status: cliente.status,
+          data_inicio: cliente.data_inicio,
+          data_expiracao: cliente.data_expiracao,
+          created_at: cliente.criado_em || cliente.created_at,
+          servicos_ia: servico,
+          planos: plano,
+        },
+      ];
+    }
 
     const { data: pagamentos } = await supabase
       .from("pagamentos_ia_whatsapp")
