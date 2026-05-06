@@ -7,8 +7,9 @@ export default function ClientePage() {
   const [dados, setDados] = useState<any>(null);
   const [aba, setAba] = useState("resumo");
   const [loading, setLoading] = useState(true);
-  const [pagando, setPagando] = useState("");
+  const [erroSessao, setErroSessao] = useState("");
 
+  const [pagando, setPagando] = useState("");
   const [buscaPagamento, setBuscaPagamento] = useState("");
   const [filtroPagamento, setFiltroPagamento] = useState("todos");
 
@@ -22,20 +23,31 @@ export default function ClientePage() {
   }, []);
 
   async function iniciarSessao() {
+    setLoading(true);
+
     const params = new URLSearchParams(window.location.search);
 
     const tokenUrl = params.get("token");
     const clienteUrl = params.get("cliente");
+    const adminUrl = params.get("admin");
 
-    if (tokenUrl && clienteUrl) {
+    if (tokenUrl) {
       localStorage.setItem("clienteToken", tokenUrl);
+    }
+
+    if (clienteUrl) {
       localStorage.setItem("clienteId", clienteUrl);
+    }
+
+    if (adminUrl) {
+      localStorage.setItem("clienteAcessoAdmin", "1");
     }
 
     const tokenFinal = tokenUrl || localStorage.getItem("clienteToken");
 
     if (!tokenFinal) {
-      window.location.href = "/login";
+      setLoading(false);
+      setErroSessao("Sessão não encontrada. Faça login novamente.");
       return;
     }
 
@@ -44,8 +56,6 @@ export default function ClientePage() {
   }
 
   async function carregarDados(tokenParam = token) {
-    setLoading(true);
-
     try {
       const res = await fetch("/api/cliente/dados", {
         method: "POST",
@@ -58,16 +68,16 @@ export default function ClientePage() {
       const data = await res.json();
 
       if (!res.ok || data.error) {
-        limparSessaoLocal();
-        window.location.href = "/login";
+        setErroSessao(data.detalhe || data.error || "Sessão inválida.");
+        setDados(null);
         return;
       }
 
+      setErroSessao("");
       setDados(data);
     } catch (error) {
       console.error(error);
-      limparSessaoLocal();
-      window.location.href = "/login";
+      setErroSessao("Erro ao carregar dados do cliente.");
     } finally {
       setLoading(false);
     }
@@ -157,9 +167,15 @@ export default function ClientePage() {
     localStorage.removeItem("clienteId");
     localStorage.removeItem("clienteNome");
     localStorage.removeItem("clienteEmail");
+    localStorage.removeItem("clienteAcessoAdmin");
   }
 
   function sair() {
+    limparSessaoLocal();
+    window.location.href = "/login";
+  }
+
+  function irLogin() {
     limparSessaoLocal();
     window.location.href = "/login";
   }
@@ -243,6 +259,29 @@ export default function ClientePage() {
     );
   }
 
+  if (erroSessao) {
+    return (
+      <main className="min-h-screen bg-black text-white flex items-center justify-center p-6">
+        <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 max-w-xl w-full">
+          <h1 className="text-2xl font-bold mb-3">Não foi possível abrir a área do cliente</h1>
+
+          <p className="text-gray-300 mb-4">{erroSessao}</p>
+
+          <p className="text-gray-500 text-sm mb-4 break-all">
+            Token atual: {token || "sem token"}
+          </p>
+
+          <button
+            onClick={irLogin}
+            className="bg-green-600 hover:bg-green-700 px-5 py-3 rounded-lg font-bold"
+          >
+            Ir para login
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-black text-white p-6">
       <div className="max-w-7xl mx-auto">
@@ -272,25 +311,11 @@ export default function ClientePage() {
         </div>
 
         <nav className="flex gap-2 flex-wrap mb-8 bg-zinc-900 border border-zinc-700 p-2 rounded-2xl">
-          <Aba ativa={aba === "resumo"} onClick={() => setAba("resumo")}>
-            Resumo
-          </Aba>
-
-          <Aba ativa={aba === "servicos"} onClick={() => setAba("servicos")}>
-            Meus serviços
-          </Aba>
-
-          <Aba ativa={aba === "planos"} onClick={() => setAba("planos")}>
-            Contratar planos
-          </Aba>
-
-          <Aba ativa={aba === "pagamentos"} onClick={() => setAba("pagamentos")}>
-            Pagamentos
-          </Aba>
-
-          <Aba ativa={aba === "conta"} onClick={() => setAba("conta")}>
-            Minha conta
-          </Aba>
+          <Aba ativa={aba === "resumo"} onClick={() => setAba("resumo")}>Resumo</Aba>
+          <Aba ativa={aba === "servicos"} onClick={() => setAba("servicos")}>Meus serviços</Aba>
+          <Aba ativa={aba === "planos"} onClick={() => setAba("planos")}>Contratar planos</Aba>
+          <Aba ativa={aba === "pagamentos"} onClick={() => setAba("pagamentos")}>Pagamentos</Aba>
+          <Aba ativa={aba === "conta"} onClick={() => setAba("conta")}>Minha conta</Aba>
         </nav>
 
         {aba === "resumo" && (
@@ -299,48 +324,17 @@ export default function ClientePage() {
               <Card titulo="Serviços ativos" valor={servicosAtivos.length} />
               <Card titulo="Total de serviços" valor={servicosCliente.length} />
               <Card titulo="Pagamentos" valor={pagamentos.length} />
-              <Card
-                titulo="WhatsApp"
-                valor={statusPt(instancia?.status || "desconectado")}
-              />
+              <Card titulo="WhatsApp" valor={statusPt(instancia?.status || "desconectado")} />
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
-                <h2 className="text-2xl font-bold mb-4">Resumo da conta</h2>
+            <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
+              <h2 className="text-2xl font-bold mb-4">Resumo da conta</h2>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Info label="Nome" value={cliente?.nome} />
-                  <Info label="Email" value={cliente?.email} />
-                  <Info label="Telefone" value={cliente?.telefone || "-"} />
-                  <Info label="Status geral" value={statusPt(cliente?.status)} />
-                </div>
-              </div>
-
-              <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
-                <h2 className="text-2xl font-bold mb-4">Últimos pagamentos</h2>
-
-                <div className="grid gap-3">
-                  {pagamentos.slice(0, 5).map((p: any) => (
-                    <div
-                      key={p.id}
-                      className="bg-zinc-800 border border-zinc-700 rounded-xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-2"
-                    >
-                      <div>
-                        <p className="font-bold">{dinheiro(p.valor)}</p>
-                        <p className="text-gray-400 text-sm">
-                          {dataPt(p.created_at || p.criado_em)}
-                        </p>
-                      </div>
-
-                      <Status status={statusPt(p.status)} />
-                    </div>
-                  ))}
-
-                  {pagamentos.length === 0 && (
-                    <p className="text-gray-400">Nenhum pagamento encontrado.</p>
-                  )}
-                </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Info label="Nome" value={cliente?.nome} />
+                <Info label="Email" value={cliente?.email} />
+                <Info label="Telefone" value={cliente?.telefone || "-"} />
+                <Info label="Status geral" value={statusPt(cliente?.status)} />
               </div>
             </div>
           </section>
@@ -352,16 +346,10 @@ export default function ClientePage() {
 
             <div className="grid gap-4">
               {servicosCliente.map((item: any) => (
-                <div
-                  key={item.id}
-                  className="bg-zinc-800 border border-zinc-700 rounded-xl p-5"
-                >
+                <div key={item.id} className="bg-zinc-800 border border-zinc-700 rounded-xl p-5">
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div>
-                      <h3 className="text-xl font-bold">
-                        {item.servicos_ia?.nome || "Serviço"}
-                      </h3>
-
+                      <h3 className="text-xl font-bold">{item.servicos_ia?.nome || "Serviço"}</h3>
                       <p className="text-gray-400 text-sm">
                         Plano: {item.planos?.nome || item.plano_id || "-"}
                       </p>
@@ -379,20 +367,82 @@ export default function ClientePage() {
               ))}
 
               {servicosCliente.length === 0 && (
-                <p className="text-gray-400">
-                  Você ainda não possui serviços contratados.
-                </p>
+                <p className="text-gray-400">Você ainda não possui serviços contratados.</p>
               )}
+            </div>
+          </section>
+        )}
+
+        {aba === "pagamentos" && (
+          <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
+            <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-6">
+              <div>
+                <h2 className="text-2xl font-bold">Histórico de pagamentos</h2>
+                <p className="text-gray-400 text-sm">Exibindo os últimos 5 pagamentos encontrados.</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full lg:w-auto">
+                <input
+                  value={buscaPagamento}
+                  onChange={(e) => setBuscaPagamento(e.target.value)}
+                  placeholder="Pesquisar pagamento..."
+                  className="p-3 rounded bg-zinc-800 border border-zinc-700 min-w-[260px]"
+                />
+
+                <select
+                  value={filtroPagamento}
+                  onChange={(e) => setFiltroPagamento(e.target.value)}
+                  className="p-3 rounded bg-zinc-800 border border-zinc-700"
+                >
+                  <option value="todos">Todos</option>
+                  <option value="ativo">Ativo</option>
+                  <option value="aprovado">Aprovado</option>
+                  <option value="pendente">Pendente</option>
+                  <option value="recusado">Recusado</option>
+                  <option value="cancelado">Cancelado</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto border border-zinc-700 rounded-xl">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-zinc-800 border-b border-zinc-700 text-left">
+                    <th className="p-3">Data</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3">Valor</th>
+                    <th className="p-3">Cupom</th>
+                    <th className="p-3">Pagamento</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {pagamentosFiltrados.map((p: any) => (
+                    <tr key={p.id} className="border-b border-zinc-800">
+                      <td className="p-3">{dataPt(p.created_at || p.criado_em)}</td>
+                      <td className="p-3">{statusPt(p.status)}</td>
+                      <td className="p-3">{dinheiro(p.valor)}</td>
+                      <td className="p-3">{p.cupom_codigo || "-"}</td>
+                      <td className="p-3">{p.payment_id || p.mercado_pago_id || "-"}</td>
+                    </tr>
+                  ))}
+
+                  {pagamentosFiltrados.length === 0 && (
+                    <tr>
+                      <td className="p-5 text-center text-gray-400" colSpan={5}>
+                        Nenhum pagamento encontrado.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </section>
         )}
 
         {aba === "planos" && (
           <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
-            <h2 className="text-2xl font-bold mb-2">
-              Contratar ou renovar serviços
-            </h2>
-
+            <h2 className="text-2xl font-bold mb-2">Contratar ou renovar serviços</h2>
             <p className="text-gray-400 text-sm mb-6">
               Escolha um serviço e um plano para adicionar à sua conta.
             </p>
@@ -450,81 +500,8 @@ export default function ClientePage() {
               ))}
 
               {catalogo.length === 0 && (
-                <p className="text-gray-400">
-                  Nenhum serviço disponível para contratação.
-                </p>
+                <p className="text-gray-400">Nenhum serviço disponível para contratação.</p>
               )}
-            </div>
-          </section>
-        )}
-
-        {aba === "pagamentos" && (
-          <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
-            <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-6">
-              <div>
-                <h2 className="text-2xl font-bold">Histórico de pagamentos</h2>
-                <p className="text-gray-400 text-sm">
-                  Exibindo os últimos 5 pagamentos encontrados.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full lg:w-auto">
-                <input
-                  value={buscaPagamento}
-                  onChange={(e) => setBuscaPagamento(e.target.value)}
-                  placeholder="Pesquisar pagamento..."
-                  className="p-3 rounded bg-zinc-800 border border-zinc-700 min-w-[260px]"
-                />
-
-                <select
-                  value={filtroPagamento}
-                  onChange={(e) => setFiltroPagamento(e.target.value)}
-                  className="p-3 rounded bg-zinc-800 border border-zinc-700"
-                >
-                  <option value="todos">Todos</option>
-                  <option value="ativo">Ativo</option>
-                  <option value="aprovado">Aprovado</option>
-                  <option value="pendente">Pendente</option>
-                  <option value="recusado">Recusado</option>
-                  <option value="cancelado">Cancelado</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto border border-zinc-700 rounded-xl">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-zinc-800 border-b border-zinc-700 text-left">
-                    <th className="p-3">Data</th>
-                    <th className="p-3">Status</th>
-                    <th className="p-3">Valor</th>
-                    <th className="p-3">Cupom</th>
-                    <th className="p-3">Pagamento</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {pagamentosFiltrados.map((p: any) => (
-                    <tr key={p.id} className="border-b border-zinc-800">
-                      <td className="p-3">{dataPt(p.created_at || p.criado_em)}</td>
-                      <td className="p-3">{statusPt(p.status)}</td>
-                      <td className="p-3">{dinheiro(p.valor)}</td>
-                      <td className="p-3">{p.cupom_codigo || "-"}</td>
-                      <td className="p-3">
-                        {p.payment_id || p.mercado_pago_id || "-"}
-                      </td>
-                    </tr>
-                  ))}
-
-                  {pagamentosFiltrados.length === 0 && (
-                    <tr>
-                      <td className="p-5 text-center text-gray-400" colSpan={5}>
-                        Nenhum pagamento encontrado.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
             </div>
           </section>
         )}
