@@ -10,6 +10,7 @@ export default function AdminPage() {
   const [planos, setPlanos] = useState<any[]>([]);
   const [clientes, setClientes] = useState<any[]>([]);
   const [instancias, setInstancias] = useState<any[]>([]);
+  const [usuariosAdmin, setUsuariosAdmin] = useState<any[]>([]);
   const [dashboard, setDashboard] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
@@ -20,6 +21,11 @@ export default function AdminPage() {
   const [buscaInstancia, setBuscaInstancia] = useState("");
   const [filtroStatusInstancia, setFiltroStatusInstancia] = useState("todos");
   const [paginaInstancias, setPaginaInstancias] = useState(1);
+
+  const [novoAdminNome, setNovoAdminNome] = useState("");
+  const [novoAdminEmail, setNovoAdminEmail] = useState("");
+  const [novoAdminSenha, setNovoAdminSenha] = useState("");
+  const [novoAdminNivel, setNovoAdminNivel] = useState("suporte");
 
   const porPagina = 10;
 
@@ -38,9 +44,7 @@ export default function AdminPage() {
     try {
       const res = await fetch("/api/admin/sessao", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
       });
 
@@ -55,7 +59,7 @@ export default function AdminPage() {
       setAdmin(data.admin);
       setAdminToken(token);
 
-      await carregarTudo(token);
+      await carregarTudo(token, data.admin);
 
       const interval = setInterval(() => {
         carregarDashboard(token);
@@ -70,6 +74,10 @@ export default function AdminPage() {
     } finally {
       setCarregandoSessao(false);
     }
+  }
+
+  function ehDono(adminParam = admin) {
+    return adminParam?.nivel === "dono";
   }
 
   function podeEditarPlanos() {
@@ -88,20 +96,21 @@ export default function AdminPage() {
     );
   }
 
-  async function carregarTudo(token: string) {
+  async function carregarTudo(token: string, adminParam = admin) {
     await recarregarDados(token);
     await carregarDashboard(token);
     await carregarInstancias();
+
+    if (ehDono(adminParam)) {
+      await carregarUsuariosAdmin(token);
+    }
   }
 
   async function recarregarDados(tokenParam?: string) {
     const token = tokenParam || adminToken;
 
     const res = await fetch("/api/admin/dados", {
-      headers: {
-        "x-admin-password": process.env.NEXT_PUBLIC_ADMIN_LEGACY || "",
-        "x-admin-token": token,
-      },
+      headers: { "x-admin-token": token },
     });
 
     if (res.ok) {
@@ -115,10 +124,7 @@ export default function AdminPage() {
     const token = tokenParam || adminToken;
 
     const res = await fetch("/api/admin/dashboard", {
-      headers: {
-        "x-admin-password": process.env.NEXT_PUBLIC_ADMIN_LEGACY || "",
-        "x-admin-token": token,
-      },
+      headers: { "x-admin-token": token },
     });
 
     if (res.ok) {
@@ -136,6 +142,116 @@ export default function AdminPage() {
     }
   }
 
+  async function carregarUsuariosAdmin(tokenParam?: string) {
+    const token = tokenParam || adminToken;
+
+    const res = await fetch("/api/admin/usuarios", {
+      headers: { "x-admin-token": token },
+    });
+
+    const data = await res.json();
+
+    if (res.ok && data.ok) {
+      setUsuariosAdmin(data.usuarios || []);
+    }
+  }
+
+  async function criarUsuarioAdmin() {
+    if (!novoAdminNome || !novoAdminEmail || !novoAdminSenha) {
+      alert("Preencha nome, email e senha.");
+      return;
+    }
+
+    const res = await fetch("/api/admin/usuarios", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-token": adminToken,
+      },
+      body: JSON.stringify({
+        acao: "criar",
+        nome: novoAdminNome,
+        email: novoAdminEmail,
+        senha: novoAdminSenha,
+        nivel: novoAdminNivel,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      alert(data.error || "Erro ao criar usuário.");
+      return;
+    }
+
+    setNovoAdminNome("");
+    setNovoAdminEmail("");
+    setNovoAdminSenha("");
+    setNovoAdminNivel("suporte");
+
+    alert("Usuário criado com sucesso.");
+    await carregarUsuariosAdmin();
+  }
+
+  async function atualizarUsuarioAdmin(usuario: any) {
+    const res = await fetch("/api/admin/usuarios", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-token": adminToken,
+      },
+      body: JSON.stringify({
+        acao: "atualizar",
+        id: usuario.id,
+        nome: usuario.nome,
+        email: usuario.email,
+        nivel: usuario.nivel,
+        ativo: usuario.ativo,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      alert(data.error || "Erro ao atualizar usuário.");
+      return;
+    }
+
+    alert("Usuário atualizado.");
+    await carregarUsuariosAdmin();
+  }
+
+  async function alterarSenhaAdmin(usuario: any) {
+    const novaSenha = prompt(
+      "Digite a nova senha. Precisa ter maiúscula, minúscula, número e caractere especial:"
+    );
+
+    if (!novaSenha) return;
+
+    const res = await fetch("/api/admin/usuarios", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-token": adminToken,
+      },
+      body: JSON.stringify({
+        acao: "alterar_senha",
+        id: usuario.id,
+        novaSenha,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      alert(data.error || "Erro ao alterar senha.");
+      return;
+    }
+
+    alert("Senha alterada com sucesso.");
+    await carregarUsuariosAdmin();
+  }
+
   async function salvarPlano(plano: any) {
     if (!podeEditarPlanos()) {
       alert("Seu nível de acesso não permite alterar planos.");
@@ -148,7 +264,6 @@ export default function AdminPage() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-admin-password": process.env.NEXT_PUBLIC_ADMIN_LEGACY || "",
         "x-admin-token": adminToken,
       },
       body: JSON.stringify(plano),
@@ -186,7 +301,6 @@ export default function AdminPage() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-admin-password": process.env.NEXT_PUBLIC_ADMIN_LEGACY || "",
         "x-admin-token": adminToken,
       },
       body: JSON.stringify({
@@ -217,9 +331,7 @@ export default function AdminPage() {
     try {
       await fetch("/api/admin/logout", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: adminToken }),
       });
     } catch {}
@@ -337,7 +449,7 @@ export default function AdminPage() {
 
         <div className="flex gap-3 flex-wrap">
           <button
-            onClick={async () => carregarTudo(adminToken)}
+            onClick={async () => carregarTudo(adminToken, admin)}
             className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-5 py-3 rounded-lg font-semibold"
           >
             Atualizar painel
@@ -362,6 +474,153 @@ export default function AdminPage() {
           <Card titulo="Aguardando pagamento" valor={dashboard.aguardando} />
           <Card titulo="Total de clientes" valor={dashboard.clientes_total} />
           <Card titulo="Pagamentos" valor={dashboard.pagamentos_total} />
+        </section>
+      )}
+
+      {ehDono() && (
+        <section className="mb-10 bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
+          <h2 className="text-2xl font-bold mb-4">Usuários administrativos</h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-6">
+            <input
+              value={novoAdminNome}
+              onChange={(e) => setNovoAdminNome(e.target.value)}
+              placeholder="Nome"
+              className="p-3 rounded bg-zinc-800 border border-zinc-700"
+            />
+
+            <input
+              value={novoAdminEmail}
+              onChange={(e) => setNovoAdminEmail(e.target.value)}
+              placeholder="Email"
+              className="p-3 rounded bg-zinc-800 border border-zinc-700"
+            />
+
+            <input
+              type="password"
+              value={novoAdminSenha}
+              onChange={(e) => setNovoAdminSenha(e.target.value)}
+              placeholder="Senha forte"
+              className="p-3 rounded bg-zinc-800 border border-zinc-700"
+            />
+
+            <select
+              value={novoAdminNivel}
+              onChange={(e) => setNovoAdminNivel(e.target.value)}
+              className="p-3 rounded bg-zinc-800 border border-zinc-700"
+            >
+              <option value="suporte">Suporte</option>
+              <option value="financeiro">Financeiro</option>
+              <option value="admin">Admin</option>
+              <option value="dono">Dono</option>
+            </select>
+
+            <button
+              onClick={criarUsuarioAdmin}
+              className="bg-green-600 hover:bg-green-700 py-3 rounded font-bold"
+            >
+              Criar usuário
+            </button>
+          </div>
+
+          <div className="overflow-x-auto border border-zinc-700 rounded-xl">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-700 text-left bg-zinc-800">
+                  <th className="p-3">Nome</th>
+                  <th className="p-3">Email</th>
+                  <th className="p-3">Nível</th>
+                  <th className="p-3">Ativo</th>
+                  <th className="p-3">Ações</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {usuariosAdmin.map((usuario, index) => (
+                  <tr key={usuario.id} className="border-b border-zinc-800">
+                    <td className="p-3">
+                      <input
+                        value={usuario.nome}
+                        onChange={(e) => {
+                          const novo = [...usuariosAdmin];
+                          novo[index].nome = e.target.value;
+                          setUsuariosAdmin(novo);
+                        }}
+                        className="p-2 rounded bg-zinc-800 border border-zinc-700"
+                      />
+                    </td>
+
+                    <td className="p-3">
+                      <input
+                        value={usuario.email}
+                        onChange={(e) => {
+                          const novo = [...usuariosAdmin];
+                          novo[index].email = e.target.value;
+                          setUsuariosAdmin(novo);
+                        }}
+                        className="p-2 rounded bg-zinc-800 border border-zinc-700"
+                      />
+                    </td>
+
+                    <td className="p-3">
+                      <select
+                        value={usuario.nivel}
+                        onChange={(e) => {
+                          const novo = [...usuariosAdmin];
+                          novo[index].nivel = e.target.value;
+                          setUsuariosAdmin(novo);
+                        }}
+                        className="p-2 rounded bg-zinc-800 border border-zinc-700"
+                      >
+                        <option value="suporte">Suporte</option>
+                        <option value="financeiro">Financeiro</option>
+                        <option value="admin">Admin</option>
+                        <option value="dono">Dono</option>
+                      </select>
+                    </td>
+
+                    <td className="p-3">
+                      <input
+                        type="checkbox"
+                        checked={usuario.ativo}
+                        onChange={(e) => {
+                          const novo = [...usuariosAdmin];
+                          novo[index].ativo = e.target.checked;
+                          setUsuariosAdmin(novo);
+                        }}
+                      />
+                    </td>
+
+                    <td className="p-3">
+                      <div className="flex gap-2 flex-wrap">
+                        <button
+                          onClick={() => atualizarUsuarioAdmin(usuario)}
+                          className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded"
+                        >
+                          Salvar
+                        </button>
+
+                        <button
+                          onClick={() => alterarSenhaAdmin(usuario)}
+                          className="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded"
+                        >
+                          Alterar senha
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+
+                {usuariosAdmin.length === 0 && (
+                  <tr>
+                    <td className="p-5 text-center text-gray-400" colSpan={5}>
+                      Nenhum usuário administrativo encontrado.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
 
