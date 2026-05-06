@@ -684,34 +684,167 @@ function InfoMini({ label, value }: any) {
 }
 
 function ClientesCards({ clientes, acaoCliente, acessarCliente, excluirCliente, statusPt, dataPt }: any) {
+  function dinheiro(valor: number) {
+    return Number(valor || 0).toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    });
+  }
+
   return (
     <div className="grid gap-4">
-      {clientes.map((cliente: any) => (
-        <div key={cliente.id} className="bg-zinc-900 border border-zinc-700 rounded-2xl p-4">
-          <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
-            <div className="flex-1">
-              <div className="flex flex-col md:flex-row md:items-center gap-3 mb-3"><h3 className="text-lg font-bold">{cliente.nome}</h3><StatusBadge status={statusPt(cliente.status)} /></div>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm"><InfoMini label="Email" value={cliente.email} /><InfoMini label="Telefone" value={cliente.telefone || "-"} /><InfoMini label="Expira" value={dataPt(cliente.data_expiracao)} /><InfoMini label="Cliente ID" value={cliente.id} /></div>
+      {clientes.map((cliente: any) => {
+        const pagamentos = cliente.pagamentos_cliente || [];
+        const servicos = cliente.servicos_cliente || [];
+
+        return (
+          <div
+            key={cliente.id}
+            className="bg-zinc-900 border border-zinc-700 rounded-2xl p-4"
+          >
+            <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex flex-col md:flex-row md:items-center gap-3 mb-3">
+                  <h3 className="text-lg font-bold">{cliente.nome}</h3>
+                  <StatusBadge status={statusPt(cliente.status)} />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
+                  <InfoMini label="Email" value={cliente.email} />
+                  <InfoMini label="Telefone" value={cliente.telefone || "-"} />
+                  <InfoMini label="Expira" value={dataPt(cliente.data_expiracao)} />
+                  <InfoMini label="Cliente ID" value={cliente.id} />
+                </div>
+              </div>
+
+              <div className="flex gap-2 flex-wrap xl:justify-end">
+                <button
+                  onClick={() => acessarCliente(cliente.id)}
+                  className="bg-purple-600 hover:bg-purple-700 px-3 py-2 rounded font-bold text-sm"
+                >
+                  Entrar
+                </button>
+
+                <button
+                  onClick={() => acaoCliente(cliente.id, "bloquear")}
+                  className="bg-red-600 hover:bg-red-700 px-3 py-2 rounded font-bold text-sm"
+                >
+                  Bloquear
+                </button>
+
+                <button
+                  onClick={() => acaoCliente(cliente.id, "reativar")}
+                  className="bg-green-600 hover:bg-green-700 px-3 py-2 rounded font-bold text-sm"
+                >
+                  Reativar
+                </button>
+
+                <button
+                  onClick={() => acaoCliente(cliente.id, "gerar_link")}
+                  className="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded font-bold text-sm"
+                >
+                  Link
+                </button>
+
+                <button
+                  onClick={() => acaoCliente(cliente.id, "cobrar")}
+                  className="bg-yellow-600 hover:bg-yellow-700 px-3 py-2 rounded font-bold text-sm"
+                >
+                  Cobrar
+                </button>
+
+                <button
+                  onClick={() => excluirCliente(cliente)}
+                  className="bg-zinc-700 hover:bg-red-800 border border-red-700 px-3 py-2 rounded font-bold text-sm"
+                >
+                  Excluir
+                </button>
+              </div>
             </div>
-            <div className="flex gap-2 flex-wrap xl:justify-end">
-              <button onClick={() => acessarCliente(cliente.id)} className="bg-purple-600 hover:bg-purple-700 px-3 py-2 rounded font-bold text-sm">Entrar</button>
-              <button onClick={() => acaoCliente(cliente.id, "bloquear")} className="bg-red-600 hover:bg-red-700 px-3 py-2 rounded font-bold text-sm">Bloquear</button>
-              <button onClick={() => acaoCliente(cliente.id, "reativar")} className="bg-green-600 hover:bg-green-700 px-3 py-2 rounded font-bold text-sm">Reativar</button>
-              <button onClick={() => acaoCliente(cliente.id, "gerar_link")} className="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded font-bold text-sm">Link</button>
-              <button onClick={() => acaoCliente(cliente.id, "cobrar")} className="bg-yellow-600 hover:bg-yellow-700 px-3 py-2 rounded font-bold text-sm">Cobrar</button>
-              <button onClick={() => excluirCliente(cliente)} className="bg-zinc-700 hover:bg-red-800 border border-red-700 px-3 py-2 rounded font-bold text-sm">Excluir</button>
+
+            <div className="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-4 border-t border-zinc-800 pt-4">
+              <div>
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <h4 className="font-bold text-sm">Serviços adquiridos</h4>
+                  <span className="text-xs text-gray-400">{servicos.length} serviço(s)</span>
+                </div>
+
+                <div className="grid gap-3">
+                  {servicos.map((servico: any) => (
+                    <div
+                      key={servico.id}
+                      className="bg-zinc-800 border border-zinc-700 rounded-xl p-3"
+                    >
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                        <div>
+                          <p className="font-bold text-sm">
+                            {servico.servicos_ia?.nome || "Serviço"}
+                          </p>
+
+                          <p className="text-gray-400 text-xs">
+                            Plano: {servico.planos?.nome || servico.plano_id || "-"}
+                          </p>
+                        </div>
+
+                        <StatusBadge status={statusPt(servico.status)} />
+                      </div>
+                    </div>
+                  ))}
+
+                  {servicos.length === 0 && (
+                    <p className="text-gray-400 text-sm">Nenhum serviço vinculado.</p>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <h4 className="font-bold text-sm">Últimos pagamentos</h4>
+                  <span className="text-xs text-gray-400">máx. 5</span>
+                </div>
+
+                <div className="grid gap-3">
+                  {pagamentos.map((pagamento: any) => (
+                    <div
+                      key={pagamento.id}
+                      className="bg-zinc-800 border border-zinc-700 rounded-xl p-3"
+                    >
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                        <div>
+                          <p className="font-bold text-sm">
+                            {dinheiro(pagamento.valor)}
+                          </p>
+
+                          <p className="text-gray-400 text-xs">
+                            {dataPt(pagamento.criado_em || pagamento.created_at)}
+                          </p>
+                        </div>
+
+                        <StatusBadge status={statusPt(pagamento.status)} />
+                      </div>
+
+                      <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-400">
+                        <p className="break-all">Pagamento: {pagamento.payment_id || pagamento.mercado_pago_id || "-"}</p>
+                        <p>Cupom: {pagamento.cupom_codigo || "-"}</p>
+                      </div>
+                    </div>
+                  ))}
+
+                  {pagamentos.length === 0 && (
+                    <p className="text-gray-400 text-sm">Nenhum pagamento encontrado.</p>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
-          <div className="mt-4 border-t border-zinc-800 pt-4">
-            <h4 className="font-bold mb-3 text-sm">Serviços adquiridos</h4>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              {(cliente.servicos_cliente || []).map((servico: any) => <div key={servico.id} className="bg-zinc-800 border border-zinc-700 rounded-xl p-3"><div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2"><div><p className="font-bold text-sm">{servico.servicos_ia?.nome || "Serviço"}</p><p className="text-gray-400 text-xs">Plano: {servico.planos?.nome || servico.plano_id || "-"}</p></div><StatusBadge status={statusPt(servico.status)} /></div></div>)}
-              {(!cliente.servicos_cliente || cliente.servicos_cliente.length === 0) && <p className="text-gray-400 text-sm">Nenhum serviço vinculado.</p>}
-            </div>
-          </div>
+        );
+      })}
+
+      {clientes.length === 0 && (
+        <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-8 text-center text-gray-400">
+          Nenhum cliente encontrado.
         </div>
-      ))}
-      {clientes.length === 0 && <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-8 text-center text-gray-400">Nenhum cliente encontrado.</div>}
+      )}
     </div>
   );
 }
