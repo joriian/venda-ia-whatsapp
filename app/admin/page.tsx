@@ -15,6 +15,7 @@ export default function AdminPage() {
   const [dashboard, setDashboard] = useState<any>(null);
   const [servicos, setServicos] = useState<any[]>([]);
   const [termos, setTermos] = useState<any>(null);
+  const [cupons, setCupons] = useState<any[]>([]);
 
   const [buscaCliente, setBuscaCliente] = useState("");
   const [filtroStatusCliente, setFiltroStatusCliente] = useState("todos");
@@ -28,6 +29,9 @@ export default function AdminPage() {
 
   const [buscaServico, setBuscaServico] = useState("");
   const [filtroServicoStatus, setFiltroServicoStatus] = useState("todos");
+
+  const [buscaCupom, setBuscaCupom] = useState("");
+  const [filtroCupomStatus, setFiltroCupomStatus] = useState("todos");
 
   const [novoAdminNome, setNovoAdminNome] = useState("");
   const [novoAdminEmail, setNovoAdminEmail] = useState("");
@@ -44,6 +48,16 @@ export default function AdminPage() {
   const [novoPlanoValor, setNovoPlanoValor] = useState("");
   const [novoPlanoMeses, setNovoPlanoMeses] = useState("1");
   const [novoPlanoDestaque, setNovoPlanoDestaque] = useState(false);
+
+  const [novoCupomCodigo, setNovoCupomCodigo] = useState("");
+  const [novoCupomDescricao, setNovoCupomDescricao] = useState("");
+  const [novoCupomTipo, setNovoCupomTipo] = useState("percentual");
+  const [novoCupomValor, setNovoCupomValor] = useState("");
+  const [novoCupomLimite, setNovoCupomLimite] = useState("");
+  const [novoCupomServicoId, setNovoCupomServicoId] = useState("");
+  const [novoCupomPlanoId, setNovoCupomPlanoId] = useState("");
+  const [novoCupomDataInicio, setNovoCupomDataInicio] = useState("");
+  const [novoCupomDataFim, setNovoCupomDataFim] = useState("");
 
   const porPagina = 10;
 
@@ -102,6 +116,14 @@ export default function AdminPage() {
     return admin?.nivel === "dono" || admin?.nivel === "admin";
   }
 
+  function podeGerenciarCupons() {
+    return (
+      admin?.nivel === "dono" ||
+      admin?.nivel === "admin" ||
+      admin?.nivel === "financeiro"
+    );
+  }
+
   function podeBloquearReativar() {
     return admin?.nivel === "dono" || admin?.nivel === "admin";
   }
@@ -121,6 +143,14 @@ export default function AdminPage() {
 
     if (adminParam?.nivel === "dono" || adminParam?.nivel === "admin") {
       await carregarCatalogo(token);
+    }
+
+    if (
+      adminParam?.nivel === "dono" ||
+      adminParam?.nivel === "admin" ||
+      adminParam?.nivel === "financeiro"
+    ) {
+      await carregarCupons(token);
     }
 
     if (adminParam?.nivel === "dono") {
@@ -188,6 +218,20 @@ export default function AdminPage() {
     }
   }
 
+  async function carregarCupons(tokenParam?: string) {
+    const token = tokenParam || adminToken;
+
+    const res = await fetch("/api/admin/cupons", {
+      headers: { "x-admin-token": token },
+    });
+
+    const data = await res.json();
+
+    if (res.ok && data.ok) {
+      setCupons(data.cupons || []);
+    }
+  }
+
   async function carregarUsuariosAdmin(tokenParam?: string) {
     const token = tokenParam || adminToken;
 
@@ -200,6 +244,77 @@ export default function AdminPage() {
     if (res.ok && data.ok) {
       setUsuariosAdmin(data.usuarios || []);
     }
+  }
+
+  async function criarCupom() {
+    if (!novoCupomCodigo || !novoCupomValor) {
+      alert("Informe código e valor do cupom.");
+      return;
+    }
+
+    const res = await fetch("/api/admin/cupons", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-token": adminToken,
+      },
+      body: JSON.stringify({
+        acao: "criar",
+        codigo: novoCupomCodigo,
+        descricao: novoCupomDescricao,
+        tipo: novoCupomTipo,
+        valor: novoCupomValor,
+        limite_usos: novoCupomLimite || null,
+        servico_id: novoCupomServicoId || null,
+        plano_id: novoCupomPlanoId || null,
+        data_inicio: novoCupomDataInicio || null,
+        data_fim: novoCupomDataFim || null,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      alert(data.detalhe || data.error || "Erro ao criar cupom.");
+      return;
+    }
+
+    setNovoCupomCodigo("");
+    setNovoCupomDescricao("");
+    setNovoCupomTipo("percentual");
+    setNovoCupomValor("");
+    setNovoCupomLimite("");
+    setNovoCupomServicoId("");
+    setNovoCupomPlanoId("");
+    setNovoCupomDataInicio("");
+    setNovoCupomDataFim("");
+
+    alert("Cupom criado.");
+    await carregarCupons();
+  }
+
+  async function atualizarCupom(cupom: any) {
+    const res = await fetch("/api/admin/cupons", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-token": adminToken,
+      },
+      body: JSON.stringify({
+        acao: "atualizar",
+        ...cupom,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      alert(data.detalhe || data.error || "Erro ao atualizar cupom.");
+      return;
+    }
+
+    alert("Cupom atualizado.");
+    await carregarCupons();
   }
 
   async function criarServico() {
@@ -598,6 +713,30 @@ export default function AdminPage() {
     });
   }, [servicos, buscaServico, filtroServicoStatus]);
 
+  const cuponsFiltrados = useMemo(() => {
+    const busca = buscaCupom.toLowerCase().trim();
+
+    return cupons.filter((cupom) => {
+      const texto = [
+        cupom.codigo,
+        cupom.descricao,
+        cupom.tipo,
+        cupom.valor,
+        cupom.ativo ? "ativo" : "inativo",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      const bateBusca = !busca || texto.includes(busca);
+      const bateStatus =
+        filtroCupomStatus === "todos" ||
+        (filtroCupomStatus === "ativos" && cupom.ativo) ||
+        (filtroCupomStatus === "inativos" && !cupom.ativo);
+
+      return bateBusca && bateStatus;
+    });
+  }, [cupons, buscaCupom, filtroCupomStatus]);
+
   const instanciasFiltradas = useMemo(() => {
     const busca = buscaInstancia.toLowerCase().trim();
 
@@ -636,6 +775,15 @@ export default function AdminPage() {
     (paginaInstancias - 1) * porPagina,
     paginaInstancias * porPagina
   );
+
+  const planosTodos = useMemo(() => {
+    return servicos.flatMap((servico) =>
+      (servico.planos || []).map((plano: any) => ({
+        ...plano,
+        servico_nome: servico.nome,
+      }))
+    );
+  }, [servicos]);
 
   useEffect(() => {
     setPaginaClientes(1);
@@ -685,9 +833,15 @@ export default function AdminPage() {
           Resumo
         </Aba>
 
-        {(admin?.nivel === "dono" || admin?.nivel === "admin") && (
+        {podeGerenciarCatalogo() && (
           <Aba ativa={aba === "catalogo"} onClick={() => setAba("catalogo")}>
             Serviços e planos
+          </Aba>
+        )}
+
+        {podeGerenciarCupons() && (
+          <Aba ativa={aba === "cupons"} onClick={() => setAba("cupons")}>
+            Cupons
           </Aba>
         )}
 
@@ -724,14 +878,287 @@ export default function AdminPage() {
           <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
             <h2 className="text-2xl font-bold mb-2">Visão geral</h2>
             <p className="text-gray-400">
-              Use as abas acima para gerenciar serviços, planos, clientes,
+              Use as abas acima para gerenciar serviços, planos, cupons, clientes,
               instâncias e usuários administrativos.
             </p>
           </div>
         </section>
       )}
 
-      {aba === "catalogo" && (admin?.nivel === "dono" || admin?.nivel === "admin") && (
+      {aba === "cupons" && podeGerenciarCupons() && (
+        <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
+          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-6">
+            <div>
+              <h2 className="text-2xl font-bold">Cupons de desconto</h2>
+              <p className="text-gray-400 text-sm">
+                Crie cupons para promoções, parcerias e campanhas.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full md:w-auto">
+              <input
+                value={buscaCupom}
+                onChange={(e) => setBuscaCupom(e.target.value)}
+                placeholder="Pesquisar cupom..."
+                className="p-3 rounded bg-zinc-800 border border-zinc-700 min-w-[280px]"
+              />
+
+              <select
+                value={filtroCupomStatus}
+                onChange={(e) => setFiltroCupomStatus(e.target.value)}
+                className="p-3 rounded bg-zinc-800 border border-zinc-700"
+              >
+                <option value="todos">Todos</option>
+                <option value="ativos">Ativos</option>
+                <option value="inativos">Inativos</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="border border-zinc-700 rounded-xl p-4 mb-6">
+            <h3 className="font-bold mb-3">Criar cupom</h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <input
+                value={novoCupomCodigo}
+                onChange={(e) => setNovoCupomCodigo(e.target.value.toUpperCase())}
+                placeholder="Código. Ex: PARCEIRO10"
+                className="p-3 rounded bg-zinc-800 border border-zinc-700"
+              />
+
+              <select
+                value={novoCupomTipo}
+                onChange={(e) => setNovoCupomTipo(e.target.value)}
+                className="p-3 rounded bg-zinc-800 border border-zinc-700"
+              >
+                <option value="percentual">Percentual (%)</option>
+                <option value="fixo">Valor fixo (R$)</option>
+              </select>
+
+              <input
+                value={novoCupomValor}
+                onChange={(e) => setNovoCupomValor(e.target.value)}
+                placeholder={novoCupomTipo === "percentual" ? "Ex: 10" : "Ex: 20"}
+                className="p-3 rounded bg-zinc-800 border border-zinc-700"
+              />
+
+              <input
+                value={novoCupomLimite}
+                onChange={(e) => setNovoCupomLimite(e.target.value)}
+                placeholder="Limite de usos"
+                className="p-3 rounded bg-zinc-800 border border-zinc-700"
+              />
+
+              <select
+                value={novoCupomServicoId}
+                onChange={(e) => {
+                  setNovoCupomServicoId(e.target.value);
+                  setNovoCupomPlanoId("");
+                }}
+                className="p-3 rounded bg-zinc-800 border border-zinc-700"
+              >
+                <option value="">Todos os serviços</option>
+                {servicos.map((servico) => (
+                  <option key={servico.id} value={servico.id}>
+                    {servico.nome}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={novoCupomPlanoId}
+                onChange={(e) => setNovoCupomPlanoId(e.target.value)}
+                className="p-3 rounded bg-zinc-800 border border-zinc-700"
+              >
+                <option value="">Todos os planos</option>
+                {planosTodos
+                  .filter((plano: any) => {
+                    if (!novoCupomServicoId) return true;
+                    return plano.servico_id === novoCupomServicoId;
+                  })
+                  .map((plano: any) => (
+                    <option key={plano.id} value={plano.id}>
+                      {plano.servico_nome} - {plano.nome}
+                    </option>
+                  ))}
+              </select>
+
+              <input
+                type="datetime-local"
+                value={novoCupomDataInicio}
+                onChange={(e) => setNovoCupomDataInicio(e.target.value)}
+                className="p-3 rounded bg-zinc-800 border border-zinc-700"
+              />
+
+              <input
+                type="datetime-local"
+                value={novoCupomDataFim}
+                onChange={(e) => setNovoCupomDataFim(e.target.value)}
+                className="p-3 rounded bg-zinc-800 border border-zinc-700"
+              />
+
+              <textarea
+                value={novoCupomDescricao}
+                onChange={(e) => setNovoCupomDescricao(e.target.value)}
+                placeholder="Descrição do cupom"
+                className="md:col-span-3 p-3 rounded bg-zinc-800 border border-zinc-700 min-h-20"
+              />
+
+              <button
+                onClick={criarCupom}
+                className="bg-green-600 hover:bg-green-700 rounded font-bold"
+              >
+                Criar cupom
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto border border-zinc-700 rounded-xl">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-700 text-left bg-zinc-800">
+                  <th className="p-3">Código</th>
+                  <th className="p-3">Tipo</th>
+                  <th className="p-3">Valor</th>
+                  <th className="p-3">Usos</th>
+                  <th className="p-3">Ativo</th>
+                  <th className="p-3">Serviço</th>
+                  <th className="p-3">Plano</th>
+                  <th className="p-3">Ação</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {cuponsFiltrados.map((cupom) => {
+                  const indexReal = cupons.findIndex((c) => c.id === cupom.id);
+
+                  return (
+                    <tr key={cupom.id} className="border-b border-zinc-800">
+                      <td className="p-3">
+                        <input
+                          value={cupom.codigo}
+                          onChange={(e) => {
+                            const novo = [...cupons];
+                            novo[indexReal].codigo = e.target.value.toUpperCase();
+                            setCupons(novo);
+                          }}
+                          className="p-2 rounded bg-zinc-900 border border-zinc-700"
+                        />
+                      </td>
+
+                      <td className="p-3">
+                        <select
+                          value={cupom.tipo}
+                          onChange={(e) => {
+                            const novo = [...cupons];
+                            novo[indexReal].tipo = e.target.value;
+                            setCupons(novo);
+                          }}
+                          className="p-2 rounded bg-zinc-900 border border-zinc-700"
+                        >
+                          <option value="percentual">%</option>
+                          <option value="fixo">R$</option>
+                        </select>
+                      </td>
+
+                      <td className="p-3">
+                        <input
+                          value={cupom.valor}
+                          onChange={(e) => {
+                            const novo = [...cupons];
+                            novo[indexReal].valor = e.target.value;
+                            setCupons(novo);
+                          }}
+                          className="p-2 rounded bg-zinc-900 border border-zinc-700 w-24"
+                        />
+                      </td>
+
+                      <td className="p-3">
+                        {cupom.usos_atuais || 0} / {cupom.limite_usos || "∞"}
+                      </td>
+
+                      <td className="p-3">
+                        <input
+                          type="checkbox"
+                          checked={cupom.ativo}
+                          onChange={(e) => {
+                            const novo = [...cupons];
+                            novo[indexReal].ativo = e.target.checked;
+                            setCupons(novo);
+                          }}
+                        />
+                      </td>
+
+                      <td className="p-3">
+                        <select
+                          value={cupom.servico_id || ""}
+                          onChange={(e) => {
+                            const novo = [...cupons];
+                            novo[indexReal].servico_id = e.target.value || null;
+                            novo[indexReal].plano_id = null;
+                            setCupons(novo);
+                          }}
+                          className="p-2 rounded bg-zinc-900 border border-zinc-700"
+                        >
+                          <option value="">Todos</option>
+                          {servicos.map((servico) => (
+                            <option key={servico.id} value={servico.id}>
+                              {servico.nome}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+
+                      <td className="p-3">
+                        <select
+                          value={cupom.plano_id || ""}
+                          onChange={(e) => {
+                            const novo = [...cupons];
+                            novo[indexReal].plano_id = e.target.value || null;
+                            setCupons(novo);
+                          }}
+                          className="p-2 rounded bg-zinc-900 border border-zinc-700"
+                        >
+                          <option value="">Todos</option>
+                          {planosTodos
+                            .filter((plano: any) => {
+                              if (!cupom.servico_id) return true;
+                              return plano.servico_id === cupom.servico_id;
+                            })
+                            .map((plano: any) => (
+                              <option key={plano.id} value={plano.id}>
+                                {plano.servico_nome} - {plano.nome}
+                              </option>
+                            ))}
+                        </select>
+                      </td>
+
+                      <td className="p-3">
+                        <button
+                          onClick={() => atualizarCupom(cupons[indexReal])}
+                          className="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded"
+                        >
+                          Salvar
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {cuponsFiltrados.length === 0 && (
+                  <tr>
+                    <td className="p-5 text-center text-gray-400" colSpan={8}>
+                      Nenhum cupom encontrado.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {aba === "catalogo" && podeGerenciarCatalogo() && (
         <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-6">
             <div>
@@ -862,7 +1289,7 @@ export default function AdminPage() {
           </div>
 
           <div className="grid gap-6">
-            {servicosFiltrados.map((servico, sIndex) => {
+            {servicosFiltrados.map((servico) => {
               const indexReal = servicos.findIndex((s) => s.id === servico.id);
 
               return (
@@ -1230,15 +1657,7 @@ export default function AdminPage() {
   );
 }
 
-function Aba({
-  ativa,
-  onClick,
-  children,
-}: {
-  ativa: boolean;
-  onClick: () => void;
-  children: any;
-}) {
+function Aba({ ativa, onClick, children }: any) {
   return (
     <button
       onClick={onClick}
