@@ -24,6 +24,75 @@ async function validarCliente(token: string) {
   return cliente;
 }
 
+async function buscarPlano(planoId: any) {
+  if (!planoId) return null;
+
+  const planoTexto = String(planoId);
+
+  const { data: planoPorId } = await supabase
+    .from("planos")
+    .select("*")
+    .eq("id", planoTexto)
+    .maybeSingle();
+
+  if (planoPorId) return planoPorId;
+
+  const { data: planoPorNome } = await supabase
+    .from("planos")
+    .select("*")
+    .ilike("nome", `%${planoTexto}%`)
+    .maybeSingle();
+
+  if (planoPorNome) return planoPorNome;
+
+  return {
+    id: planoTexto,
+    nome: planoTexto,
+    valor: 0,
+    meses: 1,
+    ativo: true,
+  };
+}
+
+async function buscarServico(servicoId: any, plano: any) {
+  if (servicoId) {
+    const { data: servico } = await supabase
+      .from("servicos_ia")
+      .select("*")
+      .eq("id", servicoId)
+      .maybeSingle();
+
+    if (servico) return servico;
+  }
+
+  if (plano?.servico_id) {
+    const { data: servicoDoPlano } = await supabase
+      .from("servicos_ia")
+      .select("*")
+      .eq("id", plano.servico_id)
+      .maybeSingle();
+
+    if (servicoDoPlano) return servicoDoPlano;
+  }
+
+  const { data: primeiroServico } = await supabase
+    .from("servicos_ia")
+    .select("*")
+    .eq("ativo", true)
+    .order("ordem", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (primeiroServico) return primeiroServico;
+
+  return {
+    id: "servico_principal",
+    nome: "Serviço principal",
+    descricao: "Serviço contratado",
+    ativo: true,
+  };
+}
+
 export async function POST(req: Request) {
   try {
     const { token } = await req.json();
@@ -48,42 +117,45 @@ export async function POST(req: Request) {
       .eq("cliente_id", cliente.id)
       .order("created_at", { ascending: false });
 
-    if ((!servicosCliente || servicosCliente.length === 0) && cliente.servico_id) {
-      const { data: servico } = await supabase
-        .from("servicos_ia")
-        .select("*")
-        .eq("id", cliente.servico_id)
-        .maybeSingle();
-
-      const { data: plano } = await supabase
-        .from("planos")
-        .select("*")
-        .eq("id", cliente.plano_id)
-        .maybeSingle();
+    if (!servicosCliente || servicosCliente.length === 0) {
+      const plano = await buscarPlano(cliente.plano_id);
+      const servico = await buscarServico(cliente.servico_id, plano);
 
       servicosCliente = [
         {
           id: "principal",
           cliente_id: cliente.id,
-          servico_id: cliente.servico_id,
-          plano_id: cliente.plano_id,
-          status: cliente.status,
+          servico_id: cliente.servico_id || servico?.id || "servico_principal",
+          plano_id: cliente.plano_id || plano?.id || "plano_principal",
+          status: cliente.status || "ativo",
           data_inicio: cliente.data_inicio,
           data_expiracao: cliente.data_expiracao,
-          created_at: cliente.criado_em || cliente.created_at,
+          created_at: cliente.criado_em || cliente.created_at || cliente.data_inicio,
           servicos_ia: servico,
           planos: plano,
         },
       ];
     }
 
-    const { data: pagamentos } = await supabase
+    const { data: pagamentosPorCliente } = await supabase
       .from("pagamentos_ia_whatsapp")
       .select("*")
       .eq("cliente_id", cliente.id)
       .order("created_at", { ascending: false });
 
-    const { data: catalogo } = await supabase
+    let pagamentos = pagamentosPorCliente || [];
+
+    if (pagamentos.length === 0 && cliente.email) {
+      const { data: pagamentosPorEmail } = await supabase
+        .from("pagamentos_ia_whatsapp")
+        .select("*")
+        .ilike("email", cliente.email)
+        .order("created_at", { ascending: false });
+
+      pagamentos = pagamentosPorEmail || [];
+    }
+
+    const { data: catalogoRaw } = await supabase
       .from("servicos_ia")
       .select(`
         *,
@@ -91,6 +163,13 @@ export async function POST(req: Request) {
       `)
       .eq("ativo", true)
       .order("ordem", { ascending: true });
+
+    const catalogo = (catalogoRaw || []).map((servico: any) => ({
+      ...servico,
+      planos: (servico.planos || []).sort((a: any, b: any) => {
+        return Number(a.ordem || 0) - Number(b.ordem || 0);
+      }),
+    }));
 
     const { data: instancia } = await supabase
       .from("instancias_evolution")
@@ -102,12 +181,19 @@ export async function POST(req: Request) {
       ok: true,
       cliente,
       servicosCliente: servicosCliente || [],
-      pagamentos: pagamentos || [],
-      catalogo: catalogo || [],
+      pagamentos,
+      catalogo,
       instancia,
     });
   } catch (error: any) {
     console.log("ERRO CLIENTE DADOS:", error.message);
-    return NextResponse.json({ error: true }, { status: 500 });
+
+    return NextResponse.json(
+      {
+        error: true,
+        detalhe: error.message,
+      },
+      { status: 500 }
+    );
   }
 }
