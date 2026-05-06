@@ -33,6 +33,14 @@ function podeGerenciarCatalogo(nivel: string) {
   return nivel === "dono" || nivel === "admin";
 }
 
+function limparSlug(valor: string) {
+  return String(valor || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "");
+}
+
 export async function GET(req: Request) {
   try {
     const admin = await validarAdmin(req);
@@ -41,10 +49,18 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
     }
 
-    const { data: servicos } = await supabase
+    const { data: servicos, error: servicosError } = await supabase
       .from("servicos_ia")
       .select("*, planos(*)")
       .order("ordem", { ascending: true });
+
+    if (servicosError) {
+      console.log("ERRO BUSCAR SERVICOS:", servicosError);
+      return NextResponse.json(
+        { error: "Erro ao buscar serviços" },
+        { status: 500 }
+      );
+    }
 
     const { data: termos } = await supabase
       .from("termos_uso_config")
@@ -52,9 +68,16 @@ export async function GET(req: Request) {
       .eq("id", 1)
       .maybeSingle();
 
+    const servicosFormatados = (servicos || []).map((servico: any) => ({
+      ...servico,
+      planos: (servico.planos || []).sort((a: any, b: any) => {
+        return Number(a.ordem || 0) - Number(b.ordem || 0);
+      }),
+    }));
+
     return NextResponse.json({
       ok: true,
-      servicos: servicos || [],
+      servicos: servicosFormatados,
       termos,
     });
   } catch (error: any) {
@@ -83,11 +106,7 @@ export async function POST(req: Request) {
 
     if (acao === "criar_servico") {
       const nome = String(body.nome || "").trim();
-      const slug = String(body.slug || "")
-        .trim()
-        .toLowerCase()
-        .replace(/\s+/g, "-")
-        .replace(/[^a-z0-9-]/g, "");
+      const slug = limparSlug(body.slug || nome);
       const descricao = String(body.descricao || "").trim();
 
       if (!nome || !slug) {
@@ -107,14 +126,22 @@ export async function POST(req: Request) {
 
       if (error) {
         console.log("ERRO CRIAR SERVICO:", error);
-        return NextResponse.json({ error: "Erro ao criar serviço" }, { status: 500 });
+        return NextResponse.json(
+          { error: "Erro ao criar serviço", detalhe: error.message },
+          { status: 500 }
+        );
       }
 
       return NextResponse.json({ ok: true });
     }
 
     if (acao === "atualizar_servico") {
-      const { id, nome, slug, descricao, ativo, ordem } = body;
+      const id = body.id;
+      const nome = String(body.nome || "").trim();
+      const slug = limparSlug(body.slug || nome);
+      const descricao = String(body.descricao || "").trim();
+      const ativo = Boolean(body.ativo);
+      const ordem = Number(body.ordem || 0);
 
       if (!id || !nome || !slug) {
         return NextResponse.json(
@@ -129,21 +156,30 @@ export async function POST(req: Request) {
           nome,
           slug,
           descricao,
-          ativo: Boolean(ativo),
-          ordem: Number(ordem || 0),
+          ativo,
+          ordem,
         })
         .eq("id", id);
 
       if (error) {
         console.log("ERRO ATUALIZAR SERVICO:", error);
-        return NextResponse.json({ error: "Erro ao atualizar serviço" }, { status: 500 });
+        return NextResponse.json(
+          { error: "Erro ao atualizar serviço", detalhe: error.message },
+          { status: 500 }
+        );
       }
 
       return NextResponse.json({ ok: true });
     }
 
     if (acao === "criar_plano") {
-      const { servico_id, nome, descricao, valor, meses, destaque, ordem } = body;
+      const servico_id = body.servico_id;
+      const nome = String(body.nome || "").trim();
+      const descricao = String(body.descricao || "").trim();
+      const valor = Number(String(body.valor || "0").replace(",", "."));
+      const meses = Number(body.meses || 1);
+      const destaque = Boolean(body.destaque);
+      const ordem = Number(body.ordem || 0);
 
       if (!servico_id || !nome || !valor || !meses) {
         return NextResponse.json(
@@ -153,26 +189,36 @@ export async function POST(req: Request) {
       }
 
       const { error } = await supabase.from("planos").insert({
-        servico_id,
         nome,
-        descricao: descricao || "",
-        valor: Number(valor),
-        meses: Number(meses),
-        destaque: Boolean(destaque),
-        ordem: Number(ordem || 0),
+        meses,
+        valor,
         ativo: true,
+        servico_id,
+        descricao,
+        destaque,
+        ordem,
       });
 
       if (error) {
         console.log("ERRO CRIAR PLANO:", error);
-        return NextResponse.json({ error: "Erro ao criar plano" }, { status: 500 });
+        return NextResponse.json(
+          { error: "Erro ao criar plano", detalhe: error.message },
+          { status: 500 }
+        );
       }
 
       return NextResponse.json({ ok: true });
     }
 
     if (acao === "atualizar_plano") {
-      const { id, nome, descricao, valor, meses, ativo, destaque, ordem } = body;
+      const id = body.id;
+      const nome = String(body.nome || "").trim();
+      const descricao = String(body.descricao || "").trim();
+      const valor = Number(String(body.valor || "0").replace(",", "."));
+      const meses = Number(body.meses || 1);
+      const ativo = Boolean(body.ativo);
+      const destaque = Boolean(body.destaque);
+      const ordem = Number(body.ordem || 0);
 
       if (!id || !nome || !valor || !meses) {
         return NextResponse.json(
@@ -185,18 +231,21 @@ export async function POST(req: Request) {
         .from("planos")
         .update({
           nome,
-          descricao: descricao || "",
-          valor: Number(valor),
-          meses: Number(meses),
-          ativo: Boolean(ativo),
-          destaque: Boolean(destaque),
-          ordem: Number(ordem || 0),
+          descricao,
+          valor,
+          meses,
+          ativo,
+          destaque,
+          ordem,
         })
         .eq("id", id);
 
       if (error) {
         console.log("ERRO ATUALIZAR PLANO:", error);
-        return NextResponse.json({ error: "Erro ao atualizar plano" }, { status: 500 });
+        return NextResponse.json(
+          { error: "Erro ao atualizar plano", detalhe: error.message },
+          { status: 500 }
+        );
       }
 
       return NextResponse.json({ ok: true });
@@ -214,19 +263,20 @@ export async function POST(req: Request) {
         );
       }
 
-      const { error } = await supabase
-        .from("termos_uso_config")
-        .upsert({
-          id: 1,
-          titulo,
-          conteudo,
-          ativo,
-          updated_at: new Date().toISOString(),
-        });
+      const { error } = await supabase.from("termos_uso_config").upsert({
+        id: 1,
+        titulo,
+        conteudo,
+        ativo,
+        updated_at: new Date().toISOString(),
+      });
 
       if (error) {
         console.log("ERRO ATUALIZAR TERMOS:", error);
-        return NextResponse.json({ error: "Erro ao atualizar termos" }, { status: 500 });
+        return NextResponse.json(
+          { error: "Erro ao atualizar termos", detalhe: error.message },
+          { status: 500 }
+        );
       }
 
       return NextResponse.json({ ok: true });
@@ -235,6 +285,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Ação inválida" }, { status: 400 });
   } catch (error: any) {
     console.log("ERRO CATALOGO POST:", error.message);
-    return NextResponse.json({ error: true }, { status: 500 });
+    return NextResponse.json(
+      { error: true, detalhe: error.message },
+      { status: 500 }
+    );
   }
 }
