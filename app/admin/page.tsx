@@ -7,16 +7,14 @@ export default function AdminPage() {
   const [adminToken, setAdminToken] = useState("");
   const [carregandoSessao, setCarregandoSessao] = useState(true);
 
-  const [planos, setPlanos] = useState<any[]>([]);
+  const [aba, setAba] = useState("resumo");
+
   const [clientes, setClientes] = useState<any[]>([]);
   const [instancias, setInstancias] = useState<any[]>([]);
   const [usuariosAdmin, setUsuariosAdmin] = useState<any[]>([]);
   const [dashboard, setDashboard] = useState<any>(null);
-
   const [servicos, setServicos] = useState<any[]>([]);
   const [termos, setTermos] = useState<any>(null);
-
-  const [loading, setLoading] = useState(false);
 
   const [buscaCliente, setBuscaCliente] = useState("");
   const [filtroStatusCliente, setFiltroStatusCliente] = useState("todos");
@@ -27,6 +25,9 @@ export default function AdminPage() {
   const [paginaInstancias, setPaginaInstancias] = useState(1);
 
   const [buscaUsuarioAdmin, setBuscaUsuarioAdmin] = useState("");
+
+  const [buscaServico, setBuscaServico] = useState("");
+  const [filtroServicoStatus, setFiltroServicoStatus] = useState("todos");
 
   const [novoAdminNome, setNovoAdminNome] = useState("");
   const [novoAdminEmail, setNovoAdminEmail] = useState("");
@@ -97,7 +98,7 @@ export default function AdminPage() {
     return adminParam?.nivel === "dono";
   }
 
-  function podeEditarPlanos() {
+  function podeGerenciarCatalogo() {
     return admin?.nivel === "dono" || admin?.nivel === "admin";
   }
 
@@ -136,7 +137,6 @@ export default function AdminPage() {
 
     if (res.ok) {
       const data = await res.json();
-      setPlanos(data.planos || []);
       setClientes(data.clientes || []);
     }
   }
@@ -225,7 +225,7 @@ export default function AdminPage() {
     const data = await res.json();
 
     if (!res.ok || data.error) {
-      alert(data.error || "Erro ao criar serviço.");
+      alert(data.detalhe || data.error || "Erro ao criar serviço.");
       return;
     }
 
@@ -253,7 +253,7 @@ export default function AdminPage() {
     const data = await res.json();
 
     if (!res.ok || data.error) {
-      alert(data.error || "Erro ao atualizar serviço.");
+      alert(data.detalhe || data.error || "Erro ao atualizar serviço.");
       return;
     }
 
@@ -287,7 +287,7 @@ export default function AdminPage() {
     const data = await res.json();
 
     if (!res.ok || data.error) {
-      alert(data.error || "Erro ao criar plano.");
+      alert(data.detalhe || data.error || "Erro ao criar plano.");
       return;
     }
 
@@ -299,7 +299,6 @@ export default function AdminPage() {
 
     alert("Plano criado.");
     await carregarCatalogo();
-    await recarregarDados();
   }
 
   async function atualizarPlanoCatalogo(plano: any) {
@@ -318,13 +317,12 @@ export default function AdminPage() {
     const data = await res.json();
 
     if (!res.ok || data.error) {
-      alert(data.error || "Erro ao atualizar plano.");
+      alert(data.detalhe || data.error || "Erro ao atualizar plano.");
       return;
     }
 
     alert("Plano atualizado.");
     await carregarCatalogo();
-    await recarregarDados();
   }
 
   async function atualizarTermos() {
@@ -350,7 +348,7 @@ export default function AdminPage() {
     const data = await res.json();
 
     if (!res.ok || data.error) {
-      alert(data.error || "Erro ao atualizar termos.");
+      alert(data.detalhe || data.error || "Erro ao atualizar termos.");
       return;
     }
 
@@ -577,6 +575,29 @@ export default function AdminPage() {
     });
   }, [usuariosAdmin, buscaUsuarioAdmin]);
 
+  const servicosFiltrados = useMemo(() => {
+    const busca = buscaServico.toLowerCase().trim();
+
+    return servicos.filter((servico) => {
+      const texto = [
+        servico.nome,
+        servico.slug,
+        servico.descricao,
+        ...(servico.planos || []).map((p: any) => `${p.nome} ${p.descricao}`),
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      const bateBusca = !busca || texto.includes(busca);
+      const bateStatus =
+        filtroServicoStatus === "todos" ||
+        (filtroServicoStatus === "ativos" && servico.ativo) ||
+        (filtroServicoStatus === "inativos" && !servico.ativo);
+
+      return bateBusca && bateStatus;
+    });
+  }, [servicos, buscaServico, filtroServicoStatus]);
+
   const instanciasFiltradas = useMemo(() => {
     const busca = buscaInstancia.toLowerCase().trim();
 
@@ -659,25 +680,89 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {dashboard && (
-        <section className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10">
-          <Card titulo="Receita total" valor={dinheiro(dashboard.receita_total)} />
-          <Card titulo="Receita do mês" valor={dinheiro(dashboard.receita_mes)} />
-          <Card titulo="Clientes ativos" valor={dashboard.ativos} />
-          <Card titulo="Vencendo em 3 dias" valor={dashboard.vencendo} />
-          <Card titulo="Clientes vencidos" valor={dashboard.vencidos} />
-          <Card titulo="Aguardando pagamento" valor={dashboard.aguardando} />
-          <Card titulo="Total de clientes" valor={dashboard.clientes_total} />
-          <Card titulo="Pagamentos" valor={dashboard.pagamentos_total} />
+      <nav className="flex gap-2 flex-wrap mb-8 bg-zinc-900 border border-zinc-700 p-2 rounded-2xl">
+        <Aba ativa={aba === "resumo"} onClick={() => setAba("resumo")}>
+          Resumo
+        </Aba>
+
+        {(admin?.nivel === "dono" || admin?.nivel === "admin") && (
+          <Aba ativa={aba === "catalogo"} onClick={() => setAba("catalogo")}>
+            Serviços e planos
+          </Aba>
+        )}
+
+        <Aba ativa={aba === "clientes"} onClick={() => setAba("clientes")}>
+          Clientes
+        </Aba>
+
+        <Aba ativa={aba === "instancias"} onClick={() => setAba("instancias")}>
+          Instâncias
+        </Aba>
+
+        {ehDono() && (
+          <Aba ativa={aba === "usuarios"} onClick={() => setAba("usuarios")}>
+            Usuários admin
+          </Aba>
+        )}
+      </nav>
+
+      {aba === "resumo" && (
+        <section>
+          {dashboard && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10">
+              <Card titulo="Receita total" valor={dinheiro(dashboard.receita_total)} />
+              <Card titulo="Receita do mês" valor={dinheiro(dashboard.receita_mes)} />
+              <Card titulo="Clientes ativos" valor={dashboard.ativos} />
+              <Card titulo="Vencendo em 3 dias" valor={dashboard.vencendo} />
+              <Card titulo="Clientes vencidos" valor={dashboard.vencidos} />
+              <Card titulo="Aguardando pagamento" valor={dashboard.aguardando} />
+              <Card titulo="Total de clientes" valor={dashboard.clientes_total} />
+              <Card titulo="Pagamentos" valor={dashboard.pagamentos_total} />
+            </div>
+          )}
+
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
+            <h2 className="text-2xl font-bold mb-2">Visão geral</h2>
+            <p className="text-gray-400">
+              Use as abas acima para gerenciar serviços, planos, clientes,
+              instâncias e usuários administrativos.
+            </p>
+          </div>
         </section>
       )}
 
-      {(admin?.nivel === "dono" || admin?.nivel === "admin") && (
-        <section className="mb-10 bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
-          <h2 className="text-2xl font-bold mb-4">Serviços, planos e termos</h2>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {aba === "catalogo" && (admin?.nivel === "dono" || admin?.nivel === "admin") && (
+        <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
+          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-6">
             <div>
+              <h2 className="text-2xl font-bold">Serviços, planos e termos</h2>
+              <p className="text-gray-400 text-sm">
+                Cadastre suas IAs, planos e termos exibidos na tela inicial.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full md:w-auto">
+              <input
+                value={buscaServico}
+                onChange={(e) => setBuscaServico(e.target.value)}
+                placeholder="Pesquisar serviço ou plano..."
+                className="p-3 rounded bg-zinc-800 border border-zinc-700 min-w-[280px]"
+              />
+
+              <select
+                value={filtroServicoStatus}
+                onChange={(e) => setFiltroServicoStatus(e.target.value)}
+                className="p-3 rounded bg-zinc-800 border border-zinc-700"
+              >
+                <option value="todos">Todos</option>
+                <option value="ativos">Serviços ativos</option>
+                <option value="inativos">Serviços inativos</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
+            <div className="border border-zinc-700 rounded-xl p-4">
               <h3 className="font-bold mb-3">Criar serviço</h3>
 
               <div className="grid gap-3">
@@ -711,7 +796,7 @@ export default function AdminPage() {
               </div>
             </div>
 
-            <div>
+            <div className="border border-zinc-700 rounded-xl p-4">
               <h3 className="font-bold mb-3">Criar plano</h3>
 
               <div className="grid gap-3">
@@ -776,169 +861,185 @@ export default function AdminPage() {
             </div>
           </div>
 
-          <div className="mt-8 grid gap-6">
-            {servicos.map((servico, sIndex) => (
-              <div key={servico.id} className="border border-zinc-700 rounded-xl p-4">
-                <h3 className="font-bold mb-3">Serviço</h3>
+          <div className="grid gap-6">
+            {servicosFiltrados.map((servico, sIndex) => {
+              const indexReal = servicos.findIndex((s) => s.id === servico.id);
 
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
-                  <input
-                    value={servico.nome}
-                    onChange={(e) => {
-                      const novo = [...servicos];
-                      novo[sIndex].nome = e.target.value;
-                      setServicos(novo);
-                    }}
-                    className="p-3 rounded bg-zinc-800 border border-zinc-700"
-                  />
+              return (
+                <div key={servico.id} className="border border-zinc-700 rounded-xl p-4">
+                  <h3 className="font-bold mb-3">Serviço</h3>
 
-                  <input
-                    value={servico.slug}
-                    onChange={(e) => {
-                      const novo = [...servicos];
-                      novo[sIndex].slug = e.target.value;
-                      setServicos(novo);
-                    }}
-                    className="p-3 rounded bg-zinc-800 border border-zinc-700"
-                  />
-
-                  <input
-                    value={servico.ordem || 0}
-                    onChange={(e) => {
-                      const novo = [...servicos];
-                      novo[sIndex].ordem = Number(e.target.value);
-                      setServicos(novo);
-                    }}
-                    className="p-3 rounded bg-zinc-800 border border-zinc-700"
-                  />
-
-                  <label className="flex gap-2 items-center">
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
                     <input
-                      type="checkbox"
-                      checked={servico.ativo}
+                      value={servico.nome}
                       onChange={(e) => {
                         const novo = [...servicos];
-                        novo[sIndex].ativo = e.target.checked;
+                        novo[indexReal].nome = e.target.value;
                         setServicos(novo);
                       }}
+                      className="p-3 rounded bg-zinc-800 border border-zinc-700"
                     />
-                    Ativo
-                  </label>
 
-                  <button
-                    onClick={() => atualizarServico(servico)}
-                    className="bg-blue-600 hover:bg-blue-700 py-3 rounded font-bold"
-                  >
-                    Salvar serviço
-                  </button>
-                </div>
+                    <input
+                      value={servico.slug}
+                      onChange={(e) => {
+                        const novo = [...servicos];
+                        novo[indexReal].slug = e.target.value;
+                        setServicos(novo);
+                      }}
+                      className="p-3 rounded bg-zinc-800 border border-zinc-700"
+                    />
 
-                <textarea
-                  value={servico.descricao || ""}
-                  onChange={(e) => {
-                    const novo = [...servicos];
-                    novo[sIndex].descricao = e.target.value;
-                    setServicos(novo);
-                  }}
-                  className="w-full p-3 rounded bg-zinc-800 border border-zinc-700 min-h-20 mb-4"
-                />
+                    <input
+                      value={servico.ordem || 0}
+                      onChange={(e) => {
+                        const novo = [...servicos];
+                        novo[indexReal].ordem = Number(e.target.value);
+                        setServicos(novo);
+                      }}
+                      className="p-3 rounded bg-zinc-800 border border-zinc-700"
+                    />
 
-                <h4 className="font-bold mb-3">Planos deste serviço</h4>
+                    <label className="flex gap-2 items-center">
+                      <input
+                        type="checkbox"
+                        checked={servico.ativo}
+                        onChange={(e) => {
+                          const novo = [...servicos];
+                          novo[indexReal].ativo = e.target.checked;
+                          setServicos(novo);
+                        }}
+                      />
+                      Ativo
+                    </label>
 
-                <div className="grid gap-3">
-                  {(servico.planos || []).map((plano: any, pIndex: number) => (
-                    <div
-                      key={plano.id}
-                      className="grid grid-cols-1 md:grid-cols-8 gap-3 bg-zinc-800 border border-zinc-700 rounded-xl p-3"
+                    <button
+                      onClick={() => atualizarServico(servicos[indexReal])}
+                      className="bg-blue-600 hover:bg-blue-700 py-3 rounded font-bold"
                     >
-                      <input
-                        value={plano.nome}
-                        onChange={(e) => {
-                          const novo = [...servicos];
-                          novo[sIndex].planos[pIndex].nome = e.target.value;
-                          setServicos(novo);
-                        }}
-                        className="p-2 rounded bg-zinc-900 border border-zinc-700"
-                      />
+                      Salvar serviço
+                    </button>
+                  </div>
 
-                      <input
-                        value={plano.valor}
-                        onChange={(e) => {
-                          const novo = [...servicos];
-                          novo[sIndex].planos[pIndex].valor = e.target.value;
-                          setServicos(novo);
-                        }}
-                        className="p-2 rounded bg-zinc-900 border border-zinc-700"
-                      />
+                  <textarea
+                    value={servico.descricao || ""}
+                    onChange={(e) => {
+                      const novo = [...servicos];
+                      novo[indexReal].descricao = e.target.value;
+                      setServicos(novo);
+                    }}
+                    className="w-full p-3 rounded bg-zinc-800 border border-zinc-700 min-h-20 mb-4"
+                  />
 
-                      <input
-                        value={plano.meses}
-                        onChange={(e) => {
-                          const novo = [...servicos];
-                          novo[sIndex].planos[pIndex].meses = Number(e.target.value);
-                          setServicos(novo);
-                        }}
-                        className="p-2 rounded bg-zinc-900 border border-zinc-700"
-                      />
+                  <h4 className="font-bold mb-3">Planos deste serviço</h4>
 
-                      <input
-                        value={plano.ordem || 0}
-                        onChange={(e) => {
-                          const novo = [...servicos];
-                          novo[sIndex].planos[pIndex].ordem = Number(e.target.value);
-                          setServicos(novo);
-                        }}
-                        className="p-2 rounded bg-zinc-900 border border-zinc-700"
-                      />
-
-                      <label className="flex gap-2 items-center">
-                        <input
-                          type="checkbox"
-                          checked={plano.ativo}
-                          onChange={(e) => {
-                            const novo = [...servicos];
-                            novo[sIndex].planos[pIndex].ativo = e.target.checked;
-                            setServicos(novo);
-                          }}
-                        />
-                        Ativo
-                      </label>
-
-                      <label className="flex gap-2 items-center">
-                        <input
-                          type="checkbox"
-                          checked={plano.destaque}
-                          onChange={(e) => {
-                            const novo = [...servicos];
-                            novo[sIndex].planos[pIndex].destaque = e.target.checked;
-                            setServicos(novo);
-                          }}
-                        />
-                        Destaque
-                      </label>
-
-                      <button
-                        onClick={() => atualizarPlanoCatalogo(plano)}
-                        className="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded"
+                  <div className="grid gap-3">
+                    {(servico.planos || []).map((plano: any, pIndex: number) => (
+                      <div
+                        key={plano.id}
+                        className="grid grid-cols-1 md:grid-cols-8 gap-3 bg-zinc-800 border border-zinc-700 rounded-xl p-3"
                       >
-                        Salvar
-                      </button>
+                        <input
+                          value={plano.nome}
+                          onChange={(e) => {
+                            const novo = [...servicos];
+                            novo[indexReal].planos[pIndex].nome = e.target.value;
+                            setServicos(novo);
+                          }}
+                          className="p-2 rounded bg-zinc-900 border border-zinc-700"
+                        />
 
-                      <textarea
-                        value={plano.descricao || ""}
-                        onChange={(e) => {
-                          const novo = [...servicos];
-                          novo[sIndex].planos[pIndex].descricao = e.target.value;
-                          setServicos(novo);
-                        }}
-                        placeholder="Descrição"
-                        className="md:col-span-8 p-2 rounded bg-zinc-900 border border-zinc-700"
-                      />
-                    </div>
-                  ))}
+                        <input
+                          value={plano.valor}
+                          onChange={(e) => {
+                            const novo = [...servicos];
+                            novo[indexReal].planos[pIndex].valor = e.target.value;
+                            setServicos(novo);
+                          }}
+                          className="p-2 rounded bg-zinc-900 border border-zinc-700"
+                        />
+
+                        <input
+                          value={plano.meses}
+                          onChange={(e) => {
+                            const novo = [...servicos];
+                            novo[indexReal].planos[pIndex].meses = Number(e.target.value);
+                            setServicos(novo);
+                          }}
+                          className="p-2 rounded bg-zinc-900 border border-zinc-700"
+                        />
+
+                        <input
+                          value={plano.ordem || 0}
+                          onChange={(e) => {
+                            const novo = [...servicos];
+                            novo[indexReal].planos[pIndex].ordem = Number(e.target.value);
+                            setServicos(novo);
+                          }}
+                          className="p-2 rounded bg-zinc-900 border border-zinc-700"
+                        />
+
+                        <label className="flex gap-2 items-center">
+                          <input
+                            type="checkbox"
+                            checked={plano.ativo}
+                            onChange={(e) => {
+                              const novo = [...servicos];
+                              novo[indexReal].planos[pIndex].ativo = e.target.checked;
+                              setServicos(novo);
+                            }}
+                          />
+                          Ativo
+                        </label>
+
+                        <label className="flex gap-2 items-center">
+                          <input
+                            type="checkbox"
+                            checked={plano.destaque}
+                            onChange={(e) => {
+                              const novo = [...servicos];
+                              novo[indexReal].planos[pIndex].destaque = e.target.checked;
+                              setServicos(novo);
+                            }}
+                          />
+                          Destaque
+                        </label>
+
+                        <button
+                          onClick={() => atualizarPlanoCatalogo(servicos[indexReal].planos[pIndex])}
+                          className="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded"
+                        >
+                          Salvar
+                        </button>
+
+                        <textarea
+                          value={plano.descricao || ""}
+                          onChange={(e) => {
+                            const novo = [...servicos];
+                            novo[indexReal].planos[pIndex].descricao = e.target.value;
+                            setServicos(novo);
+                          }}
+                          placeholder="Descrição"
+                          className="md:col-span-8 p-2 rounded bg-zinc-900 border border-zinc-700"
+                        />
+                      </div>
+                    ))}
+
+                    {(servico.planos || []).length === 0 && (
+                      <p className="text-gray-400 text-sm">
+                        Nenhum plano cadastrado para este serviço.
+                      </p>
+                    )}
+                  </div>
                 </div>
+              );
+            })}
+
+            {servicosFiltrados.length === 0 && (
+              <div className="border border-zinc-700 rounded-xl p-5 text-center text-gray-400">
+                Nenhum serviço encontrado.
               </div>
-            ))}
+            )}
           </div>
 
           {termos && (
@@ -977,7 +1078,93 @@ export default function AdminPage() {
         </section>
       )}
 
-      {ehDono() && (
+      {aba === "clientes" && (
+        <section className="mb-10">
+          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
+            <div>
+              <h2 className="text-2xl font-bold">Clientes</h2>
+              <p className="text-gray-400 text-sm">
+                Exibindo {clientesPaginados.length} de {clientesFiltrados.length} clientes.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full md:w-auto">
+              <input
+                value={buscaCliente}
+                onChange={(e) => setBuscaCliente(e.target.value)}
+                placeholder="Pesquisar cliente, email, telefone..."
+                className="p-3 rounded bg-zinc-800 border border-zinc-700 min-w-[280px]"
+              />
+
+              <select
+                value={filtroStatusCliente}
+                onChange={(e) => setFiltroStatusCliente(e.target.value)}
+                className="p-3 rounded bg-zinc-800 border border-zinc-700"
+              >
+                <option value="todos">Todos os status</option>
+                <option value="ativo">Ativo</option>
+                <option value="vencido">Vencido</option>
+                <option value="aguardando_pagamento">Aguardando pagamento</option>
+              </select>
+            </div>
+          </div>
+
+          <TabelaClientes
+            clientes={clientesPaginados}
+            podeBloquearReativar={podeBloquearReativar()}
+            podeFinanceiro={podeFinanceiro()}
+            acaoCliente={acaoCliente}
+          />
+
+          <Paginacao
+            pagina={paginaClientes}
+            totalPaginas={totalPaginasClientes}
+            setPagina={setPaginaClientes}
+          />
+        </section>
+      )}
+
+      {aba === "instancias" && (
+        <section>
+          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
+            <div>
+              <h2 className="text-2xl font-bold">Instâncias em Tempo Real</h2>
+              <p className="text-gray-400 text-sm">
+                Exibindo {instanciasPaginadas.length} de {instanciasFiltradas.length} instâncias.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full md:w-auto">
+              <input
+                value={buscaInstancia}
+                onChange={(e) => setBuscaInstancia(e.target.value)}
+                placeholder="Pesquisar instância, número, nome..."
+                className="p-3 rounded bg-zinc-800 border border-zinc-700 min-w-[280px]"
+              />
+
+              <select
+                value={filtroStatusInstancia}
+                onChange={(e) => setFiltroStatusInstancia(e.target.value)}
+                className="p-3 rounded bg-zinc-800 border border-zinc-700"
+              >
+                <option value="todos">Todas</option>
+                <option value="conectado">Conectadas</option>
+                <option value="desconectado">Desconectadas</option>
+              </select>
+            </div>
+          </div>
+
+          <TabelaInstancias instancias={instanciasPaginadas} />
+
+          <Paginacao
+            pagina={paginaInstancias}
+            totalPaginas={totalPaginasInstancias}
+            setPagina={setPaginaInstancias}
+          />
+        </section>
+      )}
+
+      {aba === "usuarios" && ehDono() && (
         <section className="mb-10 bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
           <h2 className="text-2xl font-bold mb-4">Usuários administrativos</h2>
 
@@ -1031,268 +1218,36 @@ export default function AdminPage() {
           />
 
           {buscaUsuarioAdmin.trim() && (
-            <div className="overflow-x-auto border border-zinc-700 rounded-xl">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-zinc-700 text-left bg-zinc-800">
-                    <th className="p-3">Nome</th>
-                    <th className="p-3">Email</th>
-                    <th className="p-3">Nível</th>
-                    <th className="p-3">Ativo</th>
-                    <th className="p-3">Ações</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {usuariosAdminFiltrados.map((usuario) => (
-                    <tr key={usuario.id} className="border-b border-zinc-800">
-                      <td className="p-3">{usuario.nome}</td>
-                      <td className="p-3">{usuario.email}</td>
-                      <td className="p-3">{usuario.nivel}</td>
-                      <td className="p-3">{usuario.ativo ? "Sim" : "Não"}</td>
-                      <td className="p-3">
-                        <div className="flex gap-2 flex-wrap">
-                          <button
-                            onClick={() => atualizarUsuarioAdmin(usuario)}
-                            className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded"
-                          >
-                            Salvar
-                          </button>
-
-                          <button
-                            onClick={() => alterarSenhaAdmin(usuario)}
-                            className="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded"
-                          >
-                            Alterar senha
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-
-                  {usuariosAdminFiltrados.length === 0 && (
-                    <tr>
-                      <td className="p-5 text-center text-gray-400" colSpan={5}>
-                        Nenhum usuário encontrado.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <TabelaUsuarios
+              usuarios={usuariosAdminFiltrados}
+              atualizarUsuarioAdmin={atualizarUsuarioAdmin}
+              alterarSenhaAdmin={alterarSenhaAdmin}
+            />
           )}
         </section>
       )}
-
-      <section className="mb-10">
-        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
-          <div>
-            <h2 className="text-2xl font-bold">Clientes</h2>
-            <p className="text-gray-400 text-sm">
-              Exibindo {clientesPaginados.length} de {clientesFiltrados.length} clientes.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full md:w-auto">
-            <input
-              value={buscaCliente}
-              onChange={(e) => setBuscaCliente(e.target.value)}
-              placeholder="Pesquisar cliente, email, telefone..."
-              className="p-3 rounded bg-zinc-800 border border-zinc-700 min-w-[280px]"
-            />
-
-            <select
-              value={filtroStatusCliente}
-              onChange={(e) => setFiltroStatusCliente(e.target.value)}
-              className="p-3 rounded bg-zinc-800 border border-zinc-700"
-            >
-              <option value="todos">Todos os status</option>
-              <option value="ativo">Ativo</option>
-              <option value="vencido">Vencido</option>
-              <option value="aguardando_pagamento">Aguardando pagamento</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto bg-zinc-900 border border-zinc-700 rounded-xl">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-zinc-700 text-left">
-                <th className="p-3">Nome</th>
-                <th className="p-3">Email</th>
-                <th className="p-3">Telefone</th>
-                <th className="p-3">Plano</th>
-                <th className="p-3">Status</th>
-                <th className="p-3">Expira</th>
-                <th className="p-3">Área</th>
-                <th className="p-3">Ações</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {clientesPaginados.map((cliente) => (
-                <tr key={cliente.id} className="border-b border-zinc-800 align-top">
-                  <td className="p-3">{cliente.nome}</td>
-                  <td className="p-3">{cliente.email}</td>
-                  <td className="p-3">{cliente.telefone || "-"}</td>
-                  <td className="p-3">{cliente.plano_id}</td>
-                  <td className="p-3">
-                    <StatusBadge status={cliente.status} />
-                  </td>
-                  <td className="p-3">
-                    {cliente.data_expiracao
-                      ? new Date(cliente.data_expiracao).toLocaleDateString("pt-BR")
-                      : "-"}
-                  </td>
-                  <td className="p-3">
-                    <a
-                      href={`/cliente?cliente=${cliente.id}`}
-                      target="_blank"
-                      className="text-green-400 underline"
-                    >
-                      Abrir
-                    </a>
-                  </td>
-                  <td className="p-3">
-                    <div className="flex gap-2 flex-wrap">
-                      {podeBloquearReativar() && (
-                        <>
-                          <button
-                            onClick={() => acaoCliente(cliente.id, "bloquear")}
-                            className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded"
-                          >
-                            Bloquear
-                          </button>
-
-                          <button
-                            onClick={() => acaoCliente(cliente.id, "reativar")}
-                            className="bg-green-600 hover:bg-green-700 px-3 py-1 rounded"
-                          >
-                            Reativar
-                          </button>
-                        </>
-                      )}
-
-                      {podeFinanceiro() && (
-                        <>
-                          <button
-                            onClick={() => acaoCliente(cliente.id, "gerar_link")}
-                            className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded"
-                          >
-                            Link
-                          </button>
-
-                          <button
-                            onClick={() => acaoCliente(cliente.id, "cobrar")}
-                            className="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded"
-                          >
-                            Cobrar
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-
-              {clientesPaginados.length === 0 && (
-                <tr>
-                  <td className="p-5 text-center text-gray-400" colSpan={8}>
-                    Nenhum cliente encontrado.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <Paginacao
-          pagina={paginaClientes}
-          totalPaginas={totalPaginasClientes}
-          setPagina={setPaginaClientes}
-        />
-      </section>
-
-      <section>
-        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
-          <div>
-            <h2 className="text-2xl font-bold">Instâncias em Tempo Real</h2>
-            <p className="text-gray-400 text-sm">
-              Exibindo {instanciasPaginadas.length} de {instanciasFiltradas.length} instâncias.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full md:w-auto">
-            <input
-              value={buscaInstancia}
-              onChange={(e) => setBuscaInstancia(e.target.value)}
-              placeholder="Pesquisar instância, número, nome..."
-              className="p-3 rounded bg-zinc-800 border border-zinc-700 min-w-[280px]"
-            />
-
-            <select
-              value={filtroStatusInstancia}
-              onChange={(e) => setFiltroStatusInstancia(e.target.value)}
-              className="p-3 rounded bg-zinc-800 border border-zinc-700"
-            >
-              <option value="todos">Todas</option>
-              <option value="conectado">Conectadas</option>
-              <option value="desconectado">Desconectadas</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto bg-zinc-900 border border-zinc-700 rounded-xl">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-zinc-700 text-left">
-                <th className="p-3">Status</th>
-                <th className="p-3">Instância</th>
-                <th className="p-3">Nome</th>
-                <th className="p-3">Número</th>
-                <th className="p-3">Estado</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {instanciasPaginadas.map((instancia, index) => (
-                <tr key={index} className="border-b border-zinc-800">
-                  <td className="p-3">
-                    <span
-                      className={`px-3 py-1 rounded-full border text-xs font-bold ${
-                        instancia.conectado
-                          ? "bg-green-900/40 text-green-400 border-green-700"
-                          : "bg-red-900/40 text-red-400 border-red-700"
-                      }`}
-                    >
-                      {instancia.conectado ? "Conectada" : "Desconectada"}
-                    </span>
-                  </td>
-                  <td className="p-3">{instancia.instance}</td>
-                  <td className="p-3">{instancia.nome || "-"}</td>
-                  <td className="p-3">{instancia.numero || "-"}</td>
-                  <td className="p-3">{instancia.status || "-"}</td>
-                </tr>
-              ))}
-
-              {instanciasPaginadas.length === 0 && (
-                <tr>
-                  <td className="p-5 text-center text-gray-400" colSpan={5}>
-                    Nenhuma instância encontrada.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <Paginacao
-          pagina={paginaInstancias}
-          totalPaginas={totalPaginasInstancias}
-          setPagina={setPaginaInstancias}
-        />
-      </section>
     </main>
+  );
+}
+
+function Aba({
+  ativa,
+  onClick,
+  children,
+}: {
+  ativa: boolean;
+  onClick: () => void;
+  children: any;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-3 rounded-xl font-semibold ${
+        ativa ? "bg-green-600 text-white" : "bg-zinc-800 text-gray-300"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -1317,6 +1272,213 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`px-3 py-1 rounded-full border text-xs font-bold ${cor}`}>
       {status}
     </span>
+  );
+}
+
+function TabelaClientes({
+  clientes,
+  podeBloquearReativar,
+  podeFinanceiro,
+  acaoCliente,
+}: any) {
+  return (
+    <div className="overflow-x-auto bg-zinc-900 border border-zinc-700 rounded-xl">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-zinc-700 text-left">
+            <th className="p-3">Nome</th>
+            <th className="p-3">Email</th>
+            <th className="p-3">Telefone</th>
+            <th className="p-3">Plano</th>
+            <th className="p-3">Status</th>
+            <th className="p-3">Expira</th>
+            <th className="p-3">Área</th>
+            <th className="p-3">Ações</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {clientes.map((cliente: any) => (
+            <tr key={cliente.id} className="border-b border-zinc-800 align-top">
+              <td className="p-3">{cliente.nome}</td>
+              <td className="p-3">{cliente.email}</td>
+              <td className="p-3">{cliente.telefone || "-"}</td>
+              <td className="p-3">{cliente.plano_id}</td>
+              <td className="p-3">
+                <StatusBadge status={cliente.status} />
+              </td>
+              <td className="p-3">
+                {cliente.data_expiracao
+                  ? new Date(cliente.data_expiracao).toLocaleDateString("pt-BR")
+                  : "-"}
+              </td>
+              <td className="p-3">
+                <a
+                  href={`/cliente?cliente=${cliente.id}`}
+                  target="_blank"
+                  className="text-green-400 underline"
+                >
+                  Abrir
+                </a>
+              </td>
+              <td className="p-3">
+                <div className="flex gap-2 flex-wrap">
+                  {podeBloquearReativar && (
+                    <>
+                      <button
+                        onClick={() => acaoCliente(cliente.id, "bloquear")}
+                        className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded"
+                      >
+                        Bloquear
+                      </button>
+
+                      <button
+                        onClick={() => acaoCliente(cliente.id, "reativar")}
+                        className="bg-green-600 hover:bg-green-700 px-3 py-1 rounded"
+                      >
+                        Reativar
+                      </button>
+                    </>
+                  )}
+
+                  {podeFinanceiro && (
+                    <>
+                      <button
+                        onClick={() => acaoCliente(cliente.id, "gerar_link")}
+                        className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded"
+                      >
+                        Link
+                      </button>
+
+                      <button
+                        onClick={() => acaoCliente(cliente.id, "cobrar")}
+                        className="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded"
+                      >
+                        Cobrar
+                      </button>
+                    </>
+                  )}
+                </div>
+              </td>
+            </tr>
+          ))}
+
+          {clientes.length === 0 && (
+            <tr>
+              <td className="p-5 text-center text-gray-400" colSpan={8}>
+                Nenhum cliente encontrado.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TabelaInstancias({ instancias }: any) {
+  return (
+    <div className="overflow-x-auto bg-zinc-900 border border-zinc-700 rounded-xl">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-zinc-700 text-left">
+            <th className="p-3">Status</th>
+            <th className="p-3">Instância</th>
+            <th className="p-3">Nome</th>
+            <th className="p-3">Número</th>
+            <th className="p-3">Estado</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {instancias.map((instancia: any, index: number) => (
+            <tr key={index} className="border-b border-zinc-800">
+              <td className="p-3">
+                <span
+                  className={`px-3 py-1 rounded-full border text-xs font-bold ${
+                    instancia.conectado
+                      ? "bg-green-900/40 text-green-400 border-green-700"
+                      : "bg-red-900/40 text-red-400 border-red-700"
+                  }`}
+                >
+                  {instancia.conectado ? "Conectada" : "Desconectada"}
+                </span>
+              </td>
+              <td className="p-3">{instancia.instance}</td>
+              <td className="p-3">{instancia.nome || "-"}</td>
+              <td className="p-3">{instancia.numero || "-"}</td>
+              <td className="p-3">{instancia.status || "-"}</td>
+            </tr>
+          ))}
+
+          {instancias.length === 0 && (
+            <tr>
+              <td className="p-5 text-center text-gray-400" colSpan={5}>
+                Nenhuma instância encontrada.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TabelaUsuarios({
+  usuarios,
+  atualizarUsuarioAdmin,
+  alterarSenhaAdmin,
+}: any) {
+  return (
+    <div className="overflow-x-auto border border-zinc-700 rounded-xl">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-zinc-700 text-left bg-zinc-800">
+            <th className="p-3">Nome</th>
+            <th className="p-3">Email</th>
+            <th className="p-3">Nível</th>
+            <th className="p-3">Ativo</th>
+            <th className="p-3">Ações</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {usuarios.map((usuario: any) => (
+            <tr key={usuario.id} className="border-b border-zinc-800">
+              <td className="p-3">{usuario.nome}</td>
+              <td className="p-3">{usuario.email}</td>
+              <td className="p-3">{usuario.nivel}</td>
+              <td className="p-3">{usuario.ativo ? "Sim" : "Não"}</td>
+              <td className="p-3">
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => atualizarUsuarioAdmin(usuario)}
+                    className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded"
+                  >
+                    Salvar
+                  </button>
+
+                  <button
+                    onClick={() => alterarSenhaAdmin(usuario)}
+                    className="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded"
+                  >
+                    Alterar senha
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+
+          {usuarios.length === 0 && (
+            <tr>
+              <td className="p-5 text-center text-gray-400" colSpan={5}>
+                Nenhum usuário encontrado.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
