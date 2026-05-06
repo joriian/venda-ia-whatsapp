@@ -9,6 +9,9 @@ export default function ClientePage() {
   const [loading, setLoading] = useState(true);
   const [pagando, setPagando] = useState("");
 
+  const [buscaPagamento, setBuscaPagamento] = useState("");
+  const [filtroPagamento, setFiltroPagamento] = useState("todos");
+
   const [senhaAtual, setSenhaAtual] = useState("");
   const [novaSenha, setNovaSenha] = useState("");
   const [confirmarSenha, setConfirmarSenha] = useState("");
@@ -203,6 +206,35 @@ export default function ClientePage() {
     return servicosCliente.filter((s: any) => s.status === "ativo");
   }, [servicosCliente]);
 
+  const pagamentosFiltrados = useMemo(() => {
+    const busca = buscaPagamento.toLowerCase().trim();
+
+    return pagamentos
+      .filter((p: any) => {
+        const texto = [
+          p.status,
+          p.valor,
+          p.cupom_codigo,
+          p.payment_id,
+          p.mercado_pago_id,
+          p.plano_nome,
+        ]
+          .join(" ")
+          .toLowerCase();
+
+        const statusAtual = statusPt(p.status).toLowerCase();
+
+        const bateBusca = !busca || texto.includes(busca);
+        const bateFiltro =
+          filtroPagamento === "todos" ||
+          statusAtual === filtroPagamento ||
+          String(p.status || "").toLowerCase() === filtroPagamento;
+
+        return bateBusca && bateFiltro;
+      })
+      .slice(0, 5);
+  }, [pagamentos, buscaPagamento, filtroPagamento]);
+
   if (loading) {
     return (
       <main className="min-h-screen bg-black text-white flex items-center justify-center">
@@ -273,14 +305,42 @@ export default function ClientePage() {
               />
             </div>
 
-            <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
-              <h2 className="text-2xl font-bold mb-4">Resumo da conta</h2>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
+                <h2 className="text-2xl font-bold mb-4">Resumo da conta</h2>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Info label="Nome" value={cliente?.nome} />
-                <Info label="Email" value={cliente?.email} />
-                <Info label="Telefone" value={cliente?.telefone || "-"} />
-                <Info label="Status geral" value={statusPt(cliente?.status)} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Info label="Nome" value={cliente?.nome} />
+                  <Info label="Email" value={cliente?.email} />
+                  <Info label="Telefone" value={cliente?.telefone || "-"} />
+                  <Info label="Status geral" value={statusPt(cliente?.status)} />
+                </div>
+              </div>
+
+              <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
+                <h2 className="text-2xl font-bold mb-4">Últimos pagamentos</h2>
+
+                <div className="grid gap-3">
+                  {pagamentos.slice(0, 5).map((p: any) => (
+                    <div
+                      key={p.id}
+                      className="bg-zinc-800 border border-zinc-700 rounded-xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-2"
+                    >
+                      <div>
+                        <p className="font-bold">{dinheiro(p.valor)}</p>
+                        <p className="text-gray-400 text-sm">
+                          {dataPt(p.created_at || p.criado_em)}
+                        </p>
+                      </div>
+
+                      <Status status={statusPt(p.status)} />
+                    </div>
+                  ))}
+
+                  {pagamentos.length === 0 && (
+                    <p className="text-gray-400">Nenhum pagamento encontrado.</p>
+                  )}
+                </div>
               </div>
             </div>
           </section>
@@ -400,7 +460,36 @@ export default function ClientePage() {
 
         {aba === "pagamentos" && (
           <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
-            <h2 className="text-2xl font-bold mb-4">Histórico de pagamentos</h2>
+            <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-6">
+              <div>
+                <h2 className="text-2xl font-bold">Histórico de pagamentos</h2>
+                <p className="text-gray-400 text-sm">
+                  Exibindo os últimos 5 pagamentos encontrados.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full lg:w-auto">
+                <input
+                  value={buscaPagamento}
+                  onChange={(e) => setBuscaPagamento(e.target.value)}
+                  placeholder="Pesquisar pagamento..."
+                  className="p-3 rounded bg-zinc-800 border border-zinc-700 min-w-[260px]"
+                />
+
+                <select
+                  value={filtroPagamento}
+                  onChange={(e) => setFiltroPagamento(e.target.value)}
+                  className="p-3 rounded bg-zinc-800 border border-zinc-700"
+                >
+                  <option value="todos">Todos</option>
+                  <option value="ativo">Ativo</option>
+                  <option value="aprovado">Aprovado</option>
+                  <option value="pendente">Pendente</option>
+                  <option value="recusado">Recusado</option>
+                  <option value="cancelado">Cancelado</option>
+                </select>
+              </div>
+            </div>
 
             <div className="overflow-x-auto border border-zinc-700 rounded-xl">
               <table className="w-full text-sm">
@@ -415,17 +504,19 @@ export default function ClientePage() {
                 </thead>
 
                 <tbody>
-                  {pagamentos.map((p: any) => (
+                  {pagamentosFiltrados.map((p: any) => (
                     <tr key={p.id} className="border-b border-zinc-800">
                       <td className="p-3">{dataPt(p.created_at || p.criado_em)}</td>
                       <td className="p-3">{statusPt(p.status)}</td>
                       <td className="p-3">{dinheiro(p.valor)}</td>
                       <td className="p-3">{p.cupom_codigo || "-"}</td>
-                      <td className="p-3">{p.payment_id || p.mercado_pago_id || "-"}</td>
+                      <td className="p-3">
+                        {p.payment_id || p.mercado_pago_id || "-"}
+                      </td>
                     </tr>
                   ))}
 
-                  {pagamentos.length === 0 && (
+                  {pagamentosFiltrados.length === 0 && (
                     <tr>
                       <td className="p-5 text-center text-gray-400" colSpan={5}>
                         Nenhum pagamento encontrado.
@@ -534,7 +625,7 @@ function Info({ label, value }: any) {
 }
 
 function Status({ status }: any) {
-  const ativo = status === "Ativo";
+  const ativo = status === "Ativo" || status === "Aprovado";
 
   return (
     <span
