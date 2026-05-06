@@ -6,57 +6,79 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-async function validarSessao(clienteId: string, token: string) {
-  if (!clienteId || !token) return false;
-
+async function validarCliente(token: string) {
   const { data: cliente } = await supabase
     .from("clientes_ia_whatsapp")
     .select("*")
-    .eq("id", clienteId)
     .eq("session_token", token)
     .maybeSingle();
 
-  if (!cliente) return false;
+  if (!cliente) return null;
 
   const expira = cliente.session_expires_at
     ? new Date(cliente.session_expires_at)
     : null;
 
-  if (!expira || expira < new Date()) return false;
+  if (!expira || expira < new Date()) return null;
 
   return cliente;
 }
 
 export async function POST(req: Request) {
   try {
-    const { clienteId, token } = await req.json();
+    const { token } = await req.json();
 
-    const cliente = await validarSessao(clienteId, token);
-
-    if (!cliente) {
-      return NextResponse.json(
-        { error: "Sessão inválida" },
-        { status: 401 }
-      );
+    if (!token) {
+      return NextResponse.json({ error: "Token obrigatório" }, { status: 401 });
     }
 
-    const { data: plano } = await supabase
-      .from("planos")
+    const cliente = await validarCliente(token);
+
+    if (!cliente) {
+      return NextResponse.json({ error: "Sessão inválida" }, { status: 401 });
+    }
+
+    const { data: servicosCliente } = await supabase
+      .from("cliente_servicos")
+      .select(`
+        *,
+        servicos_ia (*),
+        planos (*)
+      `)
+      .eq("cliente_id", cliente.id)
+      .order("created_at", { ascending: false });
+
+    const { data: pagamentos } = await supabase
+      .from("pagamentos_ia_whatsapp")
       .select("*")
-      .eq("id", cliente.plano_id)
+      .eq("cliente_id", cliente.id)
+      .order("created_at", { ascending: false });
+
+    const { data: catalogo } = await supabase
+      .from("servicos_ia")
+      .select(`
+        *,
+        planos (*)
+      `)
+      .eq("ativo", true)
+      .order("ordem", { ascending: true });
+
+    const { data: instancia } = await supabase
+      .from("instancias_evolution")
+      .select("*")
+      .eq("cliente_id", cliente.id)
       .maybeSingle();
 
     return NextResponse.json({
       ok: true,
       cliente,
-      plano,
+      servicosCliente: servicosCliente || [],
+      pagamentos: pagamentos || [],
+      catalogo: catalogo || [],
+      instancia,
     });
   } catch (error: any) {
     console.log("ERRO CLIENTE DADOS:", error.message);
-
-    return NextResponse.json(
-      { error: true },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: true }, { status: 500 });
   }
 }
