@@ -38,13 +38,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
     }
 
-    const { data: permissao } = await supabase
-      .from("admin_permissoes")
-      .select("*")
-      .eq("nivel", admin.nivel)
-      .maybeSingle();
-
-    if (!permissao?.pode_acessar_cliente) {
+    if (admin.nivel !== "dono" && admin.nivel !== "admin") {
       return NextResponse.json(
         { error: "Seu nível não pode acessar painel de cliente" },
         { status: 403 }
@@ -70,7 +64,7 @@ export async function POST(req: Request) {
     const tokenCliente = crypto.randomBytes(32).toString("hex");
 
     const expira = new Date();
-    expira.setMinutes(expira.getMinutes() + 30);
+    expira.setHours(expira.getHours() + 2);
 
     await supabase
       .from("clientes_ia_whatsapp")
@@ -85,10 +79,10 @@ export async function POST(req: Request) {
       token: tokenCliente,
       clienteId,
       expiresAt: expira.toISOString(),
-      url: `/cliente?admin=1&cliente=${clienteId}&token=${tokenCliente}`,
+      url: `/cliente?cliente=${clienteId}&token=${tokenCliente}&admin=1`,
     });
   } catch (error: any) {
     console.log("ERRO ACESSAR CLIENTE:", error.message);
-    return NextResponse.json({ error: true }, { status: 500 });
+    return NextResponse.json({ error: "Erro ao acessar cliente" }, { status: 500 });
   }
 }
