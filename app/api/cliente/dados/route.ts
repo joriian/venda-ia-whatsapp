@@ -199,7 +199,7 @@ async function buscarStatusEvolution(clienteId: string) {
   }
 }
 
-async function buscarPagamentosSeguro(cliente: any) {
+async function buscarPagamentosSeguro(cliente: any, servicosCliente: any[]) {
   const encontrados: any[] = [];
   const ids = new Set<string>();
 
@@ -282,6 +282,23 @@ async function buscarPagamentosSeguro(cliente: any) {
     );
   }
 
+  if (encontrados.length === 0) {
+    for (const item of servicosCliente || []) {
+      const plano = item.planos;
+      const valor = plano?.valor || 0;
+
+      encontrados.push({
+        id: `fallback-${item.id}`,
+        created_at: item.data_inicio || item.created_at || cliente.data_inicio,
+        status: item.status || cliente.status || "ativo",
+        valor,
+        cupom_codigo: cliente.cupom_codigo || null,
+        payment_id: "Registro do plano ativo",
+        plano_nome: plano?.nome || item.plano_id || cliente.plano_id,
+      });
+    }
+  }
+
   encontrados.sort((a, b) => {
     const dataA = new Date(a.created_at || a.criado_em || a.data || 0).getTime();
     const dataB = new Date(b.created_at || b.criado_em || b.data || 0).getTime();
@@ -336,7 +353,7 @@ export async function POST(req: Request) {
       ];
     }
 
-    const pagamentos = await buscarPagamentosSeguro(cliente);
+    const pagamentos = await buscarPagamentosSeguro(cliente, servicosCliente);
 
     const { data: catalogoRaw } = await supabase
       .from("servicos_ia")
@@ -355,14 +372,6 @@ export async function POST(req: Request) {
     }));
 
     const instancia = await buscarStatusEvolution(cliente.id);
-
-    console.log("CLIENTE DADOS:", {
-      cliente: cliente.id,
-      email: cliente.email,
-      servicos: servicosCliente?.length || 0,
-      pagamentos: pagamentos.length,
-      instancia: instancia.status,
-    });
 
     return NextResponse.json({
       ok: true,

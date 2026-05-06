@@ -9,6 +9,11 @@ export default function ClientePage() {
   const [loading, setLoading] = useState(true);
   const [pagando, setPagando] = useState("");
 
+  const [senhaAtual, setSenhaAtual] = useState("");
+  const [novaSenha, setNovaSenha] = useState("");
+  const [confirmarSenha, setConfirmarSenha] = useState("");
+  const [alterandoSenha, setAlterandoSenha] = useState(false);
+
   useEffect(() => {
     iniciarSessao();
   }, []);
@@ -94,6 +99,53 @@ export default function ClientePage() {
       alert("Erro ao gerar pagamento.");
     } finally {
       setPagando("");
+    }
+  }
+
+  async function alterarSenha() {
+    if (!senhaAtual || !novaSenha || !confirmarSenha) {
+      alert("Preencha todos os campos de senha.");
+      return;
+    }
+
+    if (novaSenha !== confirmarSenha) {
+      alert("A nova senha e a confirmação não são iguais.");
+      return;
+    }
+
+    setAlterandoSenha(true);
+
+    try {
+      const res = await fetch("/api/cliente/alterar-senha", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          token,
+          senhaAtual,
+          novaSenha,
+          confirmarSenha,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        alert(data.error || "Erro ao alterar senha.");
+        return;
+      }
+
+      setSenhaAtual("");
+      setNovaSenha("");
+      setConfirmarSenha("");
+
+      alert("Senha alterada com sucesso.");
+    } catch (error) {
+      console.error(error);
+      alert("Erro ao alterar senha.");
+    } finally {
+      setAlterandoSenha(false);
     }
   }
 
@@ -387,16 +439,61 @@ export default function ClientePage() {
         )}
 
         {aba === "conta" && (
-          <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
-            <h2 className="text-2xl font-bold mb-4">Minha conta</h2>
+          <section className="grid gap-6">
+            <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
+              <h2 className="text-2xl font-bold mb-4">Minha conta</h2>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Info label="Nome" value={cliente?.nome} />
-              <Info label="Email" value={cliente?.email} />
-              <Info label="Telefone" value={cliente?.telefone || "-"} />
-              <Info label="Endereço" value={cliente?.endereco || "-"} />
-              <Info label="Documento" value={cliente?.documento || "-"} />
-              <Info label="Status" value={statusPt(cliente?.status)} />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Info label="Nome" value={cliente?.nome} />
+                <Info label="Email" value={cliente?.email} />
+                <Info label="Telefone" value={cliente?.telefone || "-"} />
+                <Info label="Endereço" value={cliente?.endereco || "-"} />
+                <Info label="Documento" value={cliente?.documento || "-"} />
+                <Info label="Status" value={statusPt(cliente?.status)} />
+              </div>
+            </div>
+
+            <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
+              <h2 className="text-2xl font-bold mb-2">Alterar senha</h2>
+
+              <p className="text-gray-400 text-sm mb-4">
+                A senha precisa ter no mínimo 8 caracteres, uma letra maiúscula,
+                uma letra minúscula, um número e um caractere especial.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <input
+                  type="password"
+                  value={senhaAtual}
+                  onChange={(e) => setSenhaAtual(e.target.value)}
+                  placeholder="Senha atual"
+                  className="p-3 rounded bg-zinc-800 border border-zinc-700"
+                />
+
+                <input
+                  type="password"
+                  value={novaSenha}
+                  onChange={(e) => setNovaSenha(e.target.value)}
+                  placeholder="Nova senha"
+                  className="p-3 rounded bg-zinc-800 border border-zinc-700"
+                />
+
+                <input
+                  type="password"
+                  value={confirmarSenha}
+                  onChange={(e) => setConfirmarSenha(e.target.value)}
+                  placeholder="Confirmar nova senha"
+                  className="p-3 rounded bg-zinc-800 border border-zinc-700"
+                />
+
+                <button
+                  onClick={alterarSenha}
+                  disabled={alterandoSenha}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-600 rounded font-bold"
+                >
+                  {alterandoSenha ? "Alterando..." : "Alterar senha"}
+                </button>
+              </div>
             </div>
           </section>
         )}

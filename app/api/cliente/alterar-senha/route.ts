@@ -16,68 +16,86 @@ function senhaForte(senha: string) {
   return tamanhoOk && temMaiuscula && temMinuscula && temNumero && temEspecial;
 }
 
-async function validarSessao(clienteId: string, token: string) {
-  if (!clienteId || !token) return false;
-
+async function validarCliente(token: string) {
   const { data: cliente } = await supabase
     .from("clientes_ia_whatsapp")
     .select("*")
-    .eq("id", clienteId)
     .eq("session_token", token)
     .maybeSingle();
 
-  if (!cliente) return false;
+  if (!cliente) return null;
 
   const expira = cliente.session_expires_at
     ? new Date(cliente.session_expires_at)
     : null;
 
-  if (!expira || expira < new Date()) return false;
+  if (!expira || expira < new Date()) return null;
 
   return cliente;
 }
 
 export async function POST(req: Request) {
   try {
-    const { clienteId, token, senhaAtual, novaSenha } = await req.json();
+    const { token, senhaAtual, novaSenha, confirmarSenha } = await req.json();
 
-    if (!clienteId || !token || !senhaAtual || !novaSenha) {
+    if (!token || !senhaAtual || !novaSenha || !confirmarSenha) {
       return NextResponse.json(
         { error: "Preencha todos os campos" },
         { status: 400 }
       );
     }
 
-    const cliente = await validarSessao(clienteId, token);
+    const cliente = await validarCliente(token);
 
     if (!cliente) {
       return NextResponse.json({ error: "Sessão inválida" }, { status: 401 });
     }
 
-    const novaSenhaTratada = String(novaSenha).trim();
+    if (String(cliente.senha || "") !== String(senhaAtual)) {
+      return NextResponse.json(
+        { error: "Senha atual incorreta" },
+        { status: 400 }
+      );
+    }
 
-    if (!senhaForte(novaSenhaTratada)) {
+    if (novaSenha !== confirmarSenha) {
+      return NextResponse.json(
+        { error: "A nova senha e a confirmação não são iguais" },
+        { status: 400 }
+      );
+    }
+
+    if (!senhaForte(novaSenha)) {
       return NextResponse.json(
         {
           error:
-            "A senha deve ter no mínimo 8 caracteres, com letra maiúscula, minúscula, número e caractere especial.",
+            "A senha deve ter no mínimo 8 caracteres, com maiúscula, minúscula, número e caractere especial.",
         },
         { status: 400 }
       );
     }
 
-    if (String(cliente.senha || "").trim() !== String(senhaAtual || "").trim()) {
-      return NextResponse.json({ error: "Senha atual incorreta" }, { status: 401 });
-    }
-
-    await supabase
+    const { error } = await supabase
       .from("clientes_ia_whatsapp")
-      .update({ senha: novaSenhaTratada })
-      .eq("id", clienteId);
+      .update({
+        senha: novaSenha,
+      })
+      .eq("id", cliente.id);
+
+    if (error) {
+      return NextResponse.json(
+        { error: "Erro ao alterar senha" },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    console.log("ERRO ALTERAR SENHA:", error.message);
-    return NextResponse.json({ error: true }, { status: 500 });
+    console.log("ERRO ALTERAR SENHA CLIENTE:", error.message);
+
+    return NextResponse.json(
+      { error: "Erro ao alterar senha" },
+      { status: 500 }
+    );
   }
 }
