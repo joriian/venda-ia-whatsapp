@@ -11,10 +11,7 @@ export async function POST(req: Request) {
     const { token } = await req.json();
 
     if (!token) {
-      return NextResponse.json(
-        { error: "Sessão inválida" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Token obrigatório" }, { status: 401 });
     }
 
     const { data: cliente } = await supabase
@@ -24,22 +21,15 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (!cliente) {
-      return NextResponse.json(
-        { error: "Sessão não encontrada" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Sessão inválida" }, { status: 401 });
     }
 
-    const agora = new Date();
     const expira = cliente.session_expires_at
       ? new Date(cliente.session_expires_at)
       : null;
 
-    if (!expira || expira < agora) {
-      return NextResponse.json(
-        { error: "Sessão expirada" },
-        { status: 401 }
-      );
+    if (!expira || expira < new Date()) {
+      return NextResponse.json({ error: "Sessão expirada" }, { status: 401 });
     }
 
     return NextResponse.json({
@@ -50,7 +40,7 @@ export async function POST(req: Request) {
       status: cliente.status,
     });
   } catch (error: any) {
-    console.log("ERRO SESSAO CLIENTE:", error.message);
+    console.log("ERRO CLIENTE SESSAO:", error.message);
 
     return NextResponse.json(
       { error: "Erro ao validar sessão" },

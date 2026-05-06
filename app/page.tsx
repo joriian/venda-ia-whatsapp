@@ -76,10 +76,6 @@ export default function Home() {
 
   const planosDoServico = servicoAtual?.planos || [];
 
-  const planoAtual = useMemo(() => {
-    return planosDoServico.find((plano) => plano.id === planoSelecionado);
-  }, [planosDoServico, planoSelecionado]);
-
   useEffect(() => {
     setCupomAplicado(null);
   }, [servicoSelecionado, planoSelecionado]);
@@ -137,7 +133,7 @@ export default function Home() {
 
       setCupomAplicado(data);
       alert("Cupom aplicado com sucesso.");
-    } catch (error) {
+    } catch {
       alert("Erro ao aplicar cupom.");
     } finally {
       setLoadingCupom(false);
@@ -353,73 +349,86 @@ export default function Home() {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
-              {planosDoServico.map((plano) => (
-                <div
-                  key={plano.id}
-                  onClick={() => setPlanoSelecionado(plano.id)}
-                  className={`relative bg-zinc-800 border rounded-2xl p-6 cursor-pointer ${
-                    planoSelecionado === plano.id
-                      ? "border-green-500"
-                      : "border-zinc-700"
-                  }`}
-                >
-                  {plano.destaque && (
-                    <span className="absolute -top-3 left-4 bg-green-600 px-3 py-1 rounded-full text-xs font-bold">
-                      Mais escolhido
-                    </span>
-                  )}
+              {planosDoServico.map((plano) => {
+                const selecionado = planoSelecionado === plano.id;
+                const destacado = Boolean(plano.destaque);
 
-                  <h3 className="text-2xl font-bold">{plano.nome}</h3>
+                return (
+                  <div
+                    key={plano.id}
+                    onClick={() => setPlanoSelecionado(plano.id)}
+                    className={`relative bg-zinc-800 border rounded-2xl p-6 cursor-pointer ${
+                      selecionado
+                        ? "border-blue-500"
+                        : destacado
+                        ? "border-green-500"
+                        : "border-zinc-700"
+                    }`}
+                  >
+                    {destacado && (
+                      <span className="absolute -top-3 left-4 bg-green-600 px-3 py-1 rounded-full text-xs font-bold">
+                        Mais escolhido
+                      </span>
+                    )}
 
-                  {plano.descricao && (
-                    <p className="text-gray-400 text-sm mt-2">
-                      {plano.descricao}
-                    </p>
-                  )}
+                    {selecionado && (
+                      <span className="absolute -top-3 right-4 bg-blue-600 px-3 py-1 rounded-full text-xs font-bold">
+                        Selecionado
+                      </span>
+                    )}
 
-                  {cupomAplicado && planoSelecionado === plano.id ? (
-                    <div className="mt-5">
-                      <p className="text-gray-400 line-through">
+                    <h3 className="text-2xl font-bold">{plano.nome}</h3>
+
+                    {plano.descricao && (
+                      <p className="text-gray-400 text-sm mt-2">
+                        {plano.descricao}
+                      </p>
+                    )}
+
+                    {cupomAplicado && selecionado ? (
+                      <div className="mt-5">
+                        <p className="text-gray-400 line-through">
+                          {dinheiro(plano.valor)}
+                        </p>
+
+                        <p className="text-3xl font-bold text-green-400">
+                          {dinheiro(precoFinal(plano))}
+                        </p>
+
+                        <p className="text-xs text-green-400 mt-1">
+                          Desconto: {dinheiro(cupomAplicado.descontoValor)}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-3xl font-bold mt-5">
                         {dinheiro(plano.valor)}
                       </p>
+                    )}
 
-                      <p className="text-3xl font-bold text-green-400">
-                        {dinheiro(precoFinal(plano))}
-                      </p>
-
-                      <p className="text-xs text-green-400 mt-1">
-                        Desconto: {dinheiro(cupomAplicado.descontoValor)}
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="text-3xl font-bold mt-5">
-                      {dinheiro(plano.valor)}
+                    <p className="text-gray-400 mt-2">
+                      Acesso por {plano.meses}{" "}
+                      {plano.meses === 1 ? "mês" : "meses"}
                     </p>
-                  )}
 
-                  <p className="text-gray-400 mt-2">
-                    Acesso por {plano.meses}{" "}
-                    {plano.meses === 1 ? "mês" : "meses"}
-                  </p>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        comprar(plano.id);
+                      }}
+                      disabled={loadingPlano !== null}
+                      className="mt-6 w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-5 py-3 rounded-lg font-semibold"
+                    >
+                      {loadingPlano === plano.id
+                        ? "Gerando..."
+                        : "Pagar e criar acesso"}
+                    </button>
 
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      comprar(plano.id);
-                    }}
-                    disabled={loadingPlano !== null}
-                    className="mt-6 w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-5 py-3 rounded-lg font-semibold"
-                  >
-                    {loadingPlano === plano.id
-                      ? "Gerando..."
-                      : "Pagar e criar acesso"}
-                  </button>
-
-                  <p className="text-xs text-gray-400 mt-3">
-                    Após pagar, clique em <strong>“Voltar ao site”</strong>.
-                  </p>
-                </div>
-              ))}
+                    <p className="text-xs text-gray-400 mt-3">
+                      Após pagar, clique em <strong>“Voltar ao site”</strong>.
+                    </p>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="bg-zinc-800 border border-zinc-700 rounded-xl p-4">
