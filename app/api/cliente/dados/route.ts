@@ -199,6 +199,99 @@ async function buscarStatusEvolution(clienteId: string) {
   }
 }
 
+async function buscarPagamentosSeguro(cliente: any) {
+  const encontrados: any[] = [];
+  const ids = new Set<string>();
+
+  async function tentarBusca(nome: string, query: any) {
+    try {
+      const { data, error } = await query;
+
+      if (error) {
+        console.log(`PAGAMENTOS ${nome} ERRO:`, error.message);
+        return;
+      }
+
+      for (const item of data || []) {
+        const chave =
+          item.id ||
+          item.payment_id ||
+          item.mercado_pago_id ||
+          `${item.created_at}-${item.valor}-${item.status}`;
+
+        if (!ids.has(String(chave))) {
+          ids.add(String(chave));
+          encontrados.push(item);
+        }
+      }
+    } catch (error: any) {
+      console.log(`PAGAMENTOS ${nome} FALHOU:`, error.message);
+    }
+  }
+
+  await tentarBusca(
+    "POR CLIENTE_ID",
+    supabase
+      .from("pagamentos_ia_whatsapp")
+      .select("*")
+      .eq("cliente_id", cliente.id)
+      .order("created_at", { ascending: false })
+  );
+
+  if (cliente.email) {
+    await tentarBusca(
+      "POR EMAIL",
+      supabase
+        .from("pagamentos_ia_whatsapp")
+        .select("*")
+        .ilike("email", cliente.email)
+        .order("created_at", { ascending: false })
+    );
+
+    await tentarBusca(
+      "POR PAYER_EMAIL",
+      supabase
+        .from("pagamentos_ia_whatsapp")
+        .select("*")
+        .ilike("payer_email", cliente.email)
+        .order("created_at", { ascending: false })
+    );
+  }
+
+  if (cliente.telefone) {
+    const telefoneLimpo = String(cliente.telefone).replace(/\D/g, "");
+
+    await tentarBusca(
+      "POR TELEFONE",
+      supabase
+        .from("pagamentos_ia_whatsapp")
+        .select("*")
+        .ilike("telefone", `%${telefoneLimpo}%`)
+        .order("created_at", { ascending: false })
+    );
+  }
+
+  if (cliente.nome) {
+    await tentarBusca(
+      "POR NOME",
+      supabase
+        .from("pagamentos_ia_whatsapp")
+        .select("*")
+        .ilike("nome", `%${cliente.nome}%`)
+        .order("created_at", { ascending: false })
+    );
+  }
+
+  encontrados.sort((a, b) => {
+    const dataA = new Date(a.created_at || a.criado_em || a.data || 0).getTime();
+    const dataB = new Date(b.created_at || b.criado_em || b.data || 0).getTime();
+
+    return dataB - dataA;
+  });
+
+  return encontrados;
+}
+
 export async function POST(req: Request) {
   try {
     const { token } = await req.json();
@@ -243,13 +336,7 @@ export async function POST(req: Request) {
       ];
     }
 
-    const { data: pagamentosPorCliente } = await supabase
-      .from("pagamentos_ia_whatsapp")
-      .select("*")
-      .eq("cliente_id", cliente.id)
-      .order("created_at", { ascending: false });
-
-    const pagamentos = pagamentosPorCliente || [];
+    const pagamentos = await buscarPagamentosSeguro(cliente);
 
     const { data: catalogoRaw } = await supabase
       .from("servicos_ia")
@@ -268,6 +355,14 @@ export async function POST(req: Request) {
     }));
 
     const instancia = await buscarStatusEvolution(cliente.id);
+
+    console.log("CLIENTE DADOS:", {
+      cliente: cliente.id,
+      email: cliente.email,
+      servicos: servicosCliente?.length || 0,
+      pagamentos: pagamentos.length,
+      instancia: instancia.status,
+    });
 
     return NextResponse.json({
       ok: true,
