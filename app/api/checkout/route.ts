@@ -21,12 +21,91 @@ function limparTelefone(telefone: string) {
   return String(telefone || "").replace(/\D/g, "");
 }
 
+function normalizarCupom(codigo: string) {
+  return String(codigo || "").trim().toUpperCase();
+}
+
+function calcularDesconto(tipo: string, valorCupom: number, valorPlano: number) {
+  if (tipo === "percentual") {
+    return Math.min(valorPlano, (valorPlano * valorCupom) / 100);
+  }
+
+  return Math.min(valorPlano, valorCupom);
+}
+
+async function validarCupomCheckout({
+  codigo,
+  planoId,
+  servicoId,
+  valorOriginal,
+}: {
+  codigo: string;
+  planoId: string;
+  servicoId: string;
+  valorOriginal: number;
+}) {
+  const codigoTratado = normalizarCupom(codigo);
+
+  if (!codigoTratado) {
+    return {
+      cupom: null,
+      descontoValor: 0,
+      valorFinal: valorOriginal,
+    };
+  }
+
+  const { data: cupom } = await supabase
+    .from("cupons_desconto")
+    .select("*")
+    .eq("codigo", codigoTratado)
+    .maybeSingle();
+
+  if (!cupom || !cupom.ativo) {
+    throw new Error("Cupom inválido ou inativo");
+  }
+
+  const agora = new Date();
+
+  if (cupom.data_inicio && new Date(cupom.data_inicio) > agora) {
+    throw new Error("Cupom ainda não está disponível");
+  }
+
+  if (cupom.data_fim && new Date(cupom.data_fim) < agora) {
+    throw new Error("Cupom expirado");
+  }
+
+  if (cupom.limite_usos && Number(cupom.usos_atuais || 0) >= Number(cupom.limite_usos)) {
+    throw new Error("Cupom atingiu o limite de usos");
+  }
+
+  if (cupom.servico_id && cupom.servico_id !== servicoId) {
+    throw new Error("Cupom não é válido para este serviço");
+  }
+
+  if (cupom.plano_id && cupom.plano_id !== planoId) {
+    throw new Error("Cupom não é válido para este plano");
+  }
+
+  const descontoValor = calcularDesconto(
+    String(cupom.tipo || "percentual"),
+    Number(cupom.valor || 0),
+    valorOriginal
+  );
+
+  return {
+    cupom,
+    descontoValor,
+    valorFinal: Math.max(0, valorOriginal - descontoValor),
+  };
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
     const planoId = String(body.planoId || "").trim();
     const servicoId = String(body.servicoId || "").trim();
+    const cupomCodigo = normalizarCupom(body.cupomCodigo || "");
 
     const nome = String(body.nome || "").trim();
     const email = String(body.email || "").trim().toLowerCase();
@@ -105,6 +184,31 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Serviço inválido" }, { status: 400 });
     }
 
+    const valorOriginal = Number(plano.valor || 0);
+
+    let cupom: any = null;
+    let descontoValor = 0;
+    let valorFinal = valorOriginal;
+
+    try {
+      const cupomValidado = await validarCupomCheckout({
+        codigo: cupomCodigo,
+        planoId,
+        servicoId,
+        valorOriginal,
+      });
+
+      cupom = cupomValidado.cupom;
+      descontoValor = cupomValidado.descontoValor;
+      valorFinal = cupomValidado.valorFinal;
+    } catch (error: any) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    if (valorFinal <= 0) {
+      valorFinal = 0.01;
+    }
+
     const { data: clienteExistente } = await supabase
       .from("clientes_ia_whatsapp")
       .select("*")
@@ -127,6 +231,7 @@ export async function POST(req: Request) {
           status: "aguardando_pagamento",
           termos_aceitos: true,
           termos_aceitos_em: new Date().toISOString(),
+          cupom_codigo: cupom?.codigo || null,
         })
         .eq("id", clienteExistente.id)
         .select()
@@ -156,6 +261,7 @@ export async function POST(req: Request) {
           status: "aguardando_pagamento",
           termos_aceitos: true,
           termos_aceitos_em: new Date().toISOString(),
+          cupom_codigo: cupom?.codigo || null,
         })
         .select()
         .single();
@@ -191,10 +297,12 @@ export async function POST(req: Request) {
       {
         items: [
           {
-            title: `${servico.nome} - ${plano.nome}`,
+            title: `${servico.nome} - ${plano.nome}${
+              cupom ? ` - Cupom ${cupom.codigo}` : ""
+            }`,
             quantity: 1,
             currency_id: "BRL",
-            unit_price: Number(plano.valor),
+            unit_price: Number(valorFinal.toFixed(2)),
           },
         ],
         payer: {
@@ -207,7 +315,10 @@ export async function POST(req: Request) {
           servico_id: servico.id,
           plano_id: plano.id,
           meses: plano.meses,
-          valor: plano.valor,
+          valor: valorFinal,
+          valor_original: valorOriginal,
+          desconto_valor: descontoValor,
+          cupom_codigo: cupom?.codigo || null,
         },
         back_urls: {
           success: `${siteUrl}/aguardando-pagamento?cliente=${cliente.id}`,
@@ -229,6 +340,10 @@ export async function POST(req: Request) {
       ok: true,
       init_point: response.data.init_point,
       clienteId: cliente.id,
+      valorOriginal,
+      descontoValor,
+      valorFinal,
+      cupomCodigo: cupom?.codigo || null,
     });
   } catch (error: any) {
     console.log("ERRO CHECKOUT:", error.response?.data || error.message);

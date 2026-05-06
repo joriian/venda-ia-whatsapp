@@ -37,6 +37,10 @@ export default function Home() {
   const [confirmarSenha, setConfirmarSenha] = useState("");
   const [aceitouTermos, setAceitouTermos] = useState(false);
 
+  const [cupomCodigo, setCupomCodigo] = useState("");
+  const [cupomAplicado, setCupomAplicado] = useState<any>(null);
+  const [loadingCupom, setLoadingCupom] = useState(false);
+
   useEffect(() => {
     carregarDados();
   }, []);
@@ -72,6 +76,14 @@ export default function Home() {
 
   const planosDoServico = servicoAtual?.planos || [];
 
+  const planoAtual = useMemo(() => {
+    return planosDoServico.find((plano) => plano.id === planoSelecionado);
+  }, [planosDoServico, planoSelecionado]);
+
+  useEffect(() => {
+    setCupomAplicado(null);
+  }, [servicoSelecionado, planoSelecionado]);
+
   function dinheiro(valor: number) {
     return Number(valor || 0).toLocaleString("pt-BR", {
       style: "currency",
@@ -87,6 +99,49 @@ export default function Home() {
     const tamanhoOk = senhaValor.length >= 8;
 
     return tamanhoOk && temMaiuscula && temMinuscula && temNumero && temEspecial;
+  }
+
+  async function aplicarCupom() {
+    if (!cupomCodigo.trim()) {
+      alert("Digite um cupom.");
+      return;
+    }
+
+    if (!servicoSelecionado || !planoSelecionado) {
+      alert("Selecione um serviço e um plano antes.");
+      return;
+    }
+
+    setLoadingCupom(true);
+
+    try {
+      const res = await fetch("/api/cupom/validar", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          codigo: cupomCodigo,
+          servicoId: servicoSelecionado,
+          planoId: planoSelecionado,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        setCupomAplicado(null);
+        alert(data.error || "Cupom inválido.");
+        return;
+      }
+
+      setCupomAplicado(data);
+      alert("Cupom aplicado com sucesso.");
+    } catch (error) {
+      alert("Erro ao aplicar cupom.");
+    } finally {
+      setLoadingCupom(false);
+    }
   }
 
   async function comprar(planoId: string) {
@@ -141,6 +196,7 @@ export default function Home() {
           senha,
           confirmarSenha,
           aceitouTermos,
+          cupomCodigo: cupomAplicado?.cupom?.codigo || cupomCodigo,
         }),
       });
 
@@ -158,6 +214,14 @@ export default function Home() {
     } finally {
       setLoadingPlano(null);
     }
+  }
+
+  function precoFinal(plano: Plano) {
+    if (cupomAplicado && cupomAplicado.valorFinal !== undefined) {
+      return Number(cupomAplicado.valorFinal || 0);
+    }
+
+    return Number(plano.valor || 0);
   }
 
   return (
@@ -288,12 +352,13 @@ export default function Home() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
               {planosDoServico.map((plano) => (
                 <div
                   key={plano.id}
-                  className={`relative bg-zinc-800 border rounded-2xl p-6 ${
-                    plano.destaque
+                  onClick={() => setPlanoSelecionado(plano.id)}
+                  className={`relative bg-zinc-800 border rounded-2xl p-6 cursor-pointer ${
+                    planoSelecionado === plano.id
                       ? "border-green-500"
                       : "border-zinc-700"
                   }`}
@@ -312,9 +377,25 @@ export default function Home() {
                     </p>
                   )}
 
-                  <p className="text-3xl font-bold mt-5">
-                    {dinheiro(plano.valor)}
-                  </p>
+                  {cupomAplicado && planoSelecionado === plano.id ? (
+                    <div className="mt-5">
+                      <p className="text-gray-400 line-through">
+                        {dinheiro(plano.valor)}
+                      </p>
+
+                      <p className="text-3xl font-bold text-green-400">
+                        {dinheiro(precoFinal(plano))}
+                      </p>
+
+                      <p className="text-xs text-green-400 mt-1">
+                        Desconto: {dinheiro(cupomAplicado.descontoValor)}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-3xl font-bold mt-5">
+                      {dinheiro(plano.valor)}
+                    </p>
+                  )}
 
                   <p className="text-gray-400 mt-2">
                     Acesso por {plano.meses}{" "}
@@ -322,7 +403,10 @@ export default function Home() {
                   </p>
 
                   <button
-                    onClick={() => comprar(plano.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      comprar(plano.id);
+                    }}
                     disabled={loadingPlano !== null}
                     className="mt-6 w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-5 py-3 rounded-lg font-semibold"
                   >
@@ -336,6 +420,34 @@ export default function Home() {
                   </p>
                 </div>
               ))}
+            </div>
+
+            <div className="bg-zinc-800 border border-zinc-700 rounded-xl p-4">
+              <h3 className="font-bold mb-3">Cupom de desconto</h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
+                <input
+                  value={cupomCodigo}
+                  onChange={(e) => setCupomCodigo(e.target.value.toUpperCase())}
+                  placeholder="Digite seu cupom"
+                  className="p-3 rounded bg-zinc-900 border border-zinc-700"
+                />
+
+                <button
+                  onClick={aplicarCupom}
+                  disabled={loadingCupom}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 px-5 py-3 rounded font-bold"
+                >
+                  {loadingCupom ? "Validando..." : "Aplicar cupom"}
+                </button>
+              </div>
+
+              {cupomAplicado && (
+                <p className="text-green-400 text-sm mt-3">
+                  Cupom {cupomAplicado.cupom.codigo} aplicado. Desconto de{" "}
+                  {dinheiro(cupomAplicado.descontoValor)}.
+                </p>
+              )}
             </div>
           </div>
         </section>
@@ -354,9 +466,7 @@ export default function Home() {
               onChange={(e) => setAceitouTermos(e.target.checked)}
               className="mt-1"
             />
-            <span>
-              Li e aceito os termos de uso da plataforma.
-            </span>
+            <span>Li e aceito os termos de uso da plataforma.</span>
           </label>
         </section>
       </div>
