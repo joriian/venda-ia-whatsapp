@@ -38,14 +38,6 @@ async function buscarPlano(planoId: any) {
 
   if (planoPorId) return planoPorId;
 
-  const { data: planoPorNome } = await supabase
-    .from("planos")
-    .select("*")
-    .ilike("nome", `%${planoTexto}%`)
-    .maybeSingle();
-
-  if (planoPorNome) return planoPorNome;
-
   return {
     id: planoTexto,
     nome: planoTexto,
@@ -83,14 +75,14 @@ async function buscarServico(servicoId: any, plano: any) {
     .limit(1)
     .maybeSingle();
 
-  if (primeiroServico) return primeiroServico;
-
-  return {
-    id: "servico_principal",
-    nome: "Serviço principal",
-    descricao: "Serviço contratado",
-    ativo: true,
-  };
+  return (
+    primeiroServico || {
+      id: "servico_principal",
+      nome: "Serviço principal",
+      descricao: "Serviço contratado",
+      ativo: true,
+    }
+  );
 }
 
 async function buscarStatusEvolution(clienteId: string) {
@@ -155,32 +147,30 @@ async function buscarStatusEvolution(clienteId: string) {
 }
 
 async function buscarPagamentos(cliente: any, servicosCliente: any[]) {
-  let pagamentos: any[] = [];
+  const { data, error } = await supabase
+    .from("pagamentos_ia_whatsapp")
+    .select("*")
+    .eq("cliente_id", cliente.id)
+    .order("criado_em", { ascending: false })
+    .limit(20);
 
-  try {
-    const { data } = await supabase
-      .from("pagamentos_ia_whatsapp")
-      .select("*")
-      .eq("cliente_id", cliente.id);
-
-    pagamentos = data || [];
-  } catch {
-    pagamentos = [];
+  if (!error && data && data.length > 0) {
+    return data;
   }
 
-  if (pagamentos.length === 0) {
-    pagamentos = (servicosCliente || []).map((item: any) => ({
-      id: `fallback-${item.id}`,
-      criado_em: item.data_inicio || item.created_at || cliente.data_inicio,
-      status: item.status || cliente.status || "ativo",
-      valor: item.planos?.valor || 0,
-      cupom_codigo: cliente.cupom_codigo || null,
-      payment_id: "Registro do plano ativo",
-      plano_nome: item.planos?.nome || item.plano_id || cliente.plano_id,
-    }));
-  }
-
-  return pagamentos;
+  return (servicosCliente || []).map((item: any) => ({
+    id: `fallback-${item.id}`,
+    cliente_id: cliente.id,
+    mercado_pago_id: null,
+    status: item.status || cliente.status || "aguardando_pagamento",
+    valor: item.planos?.valor || 0,
+    criado_em: item.data_inicio || item.created_at || cliente.data_inicio,
+    plano_id: item.plano_id || cliente.plano_id,
+    payment_id: "Registro do plano",
+    cupom_codigo: cliente.cupom_codigo || null,
+    desconto_valor: 0,
+    valor_original: item.planos?.valor || 0,
+  }));
 }
 
 export async function POST(req: Request) {
@@ -199,20 +189,17 @@ export async function POST(req: Request) {
 
     let servicosCliente: any[] = [];
 
-    try {
-      const { data } = await supabase
-        .from("cliente_servicos")
-        .select(`
-          *,
-          servicos_ia (*),
-          planos (*)
-        `)
-        .eq("cliente_id", cliente.id);
+    const { data: servicos } = await supabase
+      .from("cliente_servicos")
+      .select(`
+        *,
+        servicos_ia (*),
+        planos (*)
+      `)
+      .eq("cliente_id", cliente.id)
+      .order("created_at", { ascending: false });
 
-      servicosCliente = data || [];
-    } catch {
-      servicosCliente = [];
-    }
+    servicosCliente = servicos || [];
 
     if (servicosCliente.length === 0) {
       const plano = await buscarPlano(cliente.plano_id);
@@ -224,7 +211,7 @@ export async function POST(req: Request) {
           cliente_id: cliente.id,
           servico_id: cliente.servico_id || servico?.id || "servico_principal",
           plano_id: cliente.plano_id || plano?.id || "plano_principal",
-          status: cliente.status || "ativo",
+          status: cliente.status || "aguardando_pagamento",
           data_inicio: cliente.data_inicio,
           data_expiracao: cliente.data_expiracao,
           created_at: cliente.criado_em || cliente.created_at || cliente.data_inicio,
@@ -236,21 +223,21 @@ export async function POST(req: Request) {
 
     const pagamentos = await buscarPagamentos(cliente, servicosCliente);
 
-    let catalogo: any[] = [];
+    const { data: catalogoRaw } = await supabase
+      .from("servicos_ia")
+      .select(`
+        *,
+        planos (*)
+      `)
+      .eq("ativo", true)
+      .order("ordem", { ascending: true });
 
-    try {
-      const { data } = await supabase
-        .from("servicos_ia")
-        .select(`
-          *,
-          planos (*)
-        `)
-        .eq("ativo", true);
-
-      catalogo = data || [];
-    } catch {
-      catalogo = [];
-    }
+    const catalogo = (catalogoRaw || []).map((servico: any) => ({
+      ...servico,
+      planos: (servico.planos || []).sort((a: any, b: any) => {
+        return Number(a.ordem || 0) - Number(b.ordem || 0);
+      }),
+    }));
 
     const instancia = await buscarStatusEvolution(cliente.id);
 
