@@ -7,24 +7,31 @@ const supabase = createClient(
 );
 
 export async function GET() {
-  const { data, error } = await supabase
-    .from("planos")
-    .select("*")
-    .eq("ativo", true)
-    .order("meses", { ascending: true });
+  try {
+    const { data: servicos, error } = await supabase
+      .from("servicos_ia")
+      .select(`
+        *,
+        planos (*)
+      `)
+      .eq("ativo", true)
+      .order("ordem", { ascending: true });
 
-  if (error) {
-    console.log("ERRO SUPABASE PLANOS:", error);
+    if (error) {
+      console.log("ERRO PLANOS:", error);
+      return NextResponse.json({ error: "Erro ao buscar serviços" }, { status: 500 });
+    }
 
-    return NextResponse.json(
-      {
-        error: "Erro ao buscar planos",
-        detalhe: error.message,
-        code: error.code,
-      },
-      { status: 500 }
-    );
+    const formatado = (servicos || []).map((servico: any) => ({
+      ...servico,
+      planos: (servico.planos || [])
+        .filter((plano: any) => plano.ativo)
+        .sort((a: any, b: any) => Number(a.ordem || 0) - Number(b.ordem || 0)),
+    }));
+
+    return NextResponse.json(formatado);
+  } catch (error: any) {
+    console.log("ERRO API PLANOS:", error.message);
+    return NextResponse.json({ error: true }, { status: 500 });
   }
-
-  return NextResponse.json(data);
 }
