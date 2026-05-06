@@ -58,6 +58,7 @@ export async function POST(req: Request) {
     }
 
     const planoId = pagamento.metadata?.plano_id || clienteExistente.plano_id;
+    const servicoId = pagamento.metadata?.servico_id || clienteExistente.servico_id;
 
     const { data: plano } = await supabase
       .from("planos")
@@ -101,10 +102,44 @@ export async function POST(req: Request) {
       .update({
         status: "ativo",
         plano_id: planoId,
+        servico_id: servicoId,
         data_inicio: agora.toISOString(),
         data_expiracao: novaExpiracao.toISOString(),
       })
       .eq("id", clienteId);
+
+    if (servicoId) {
+      const { data: servicoAtual } = await supabase
+        .from("cliente_servicos")
+        .select("*")
+        .eq("cliente_id", clienteId)
+        .eq("servico_id", servicoId)
+        .maybeSingle();
+
+      const baseServico =
+        servicoAtual?.data_expiracao &&
+        new Date(servicoAtual.data_expiracao) > agora
+          ? new Date(servicoAtual.data_expiracao)
+          : agora;
+
+      const expServico = new Date(baseServico);
+      expServico.setMonth(expServico.getMonth() + meses);
+
+      await supabase.from("cliente_servicos").upsert(
+        {
+          cliente_id: clienteId,
+          servico_id: servicoId,
+          plano_id: planoId,
+          status: "ativo",
+          data_inicio: agora.toISOString(),
+          data_expiracao: expServico.toISOString(),
+          updated_at: agora.toISOString(),
+        },
+        {
+          onConflict: "cliente_id,servico_id",
+        }
+      );
+    }
 
     const instanceName = `cliente_${clienteId}`.replace(/-/g, "");
 
@@ -173,6 +208,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       clienteId,
+      servicoId,
       planoId,
       instanceName,
       novaExpiracao: novaExpiracao.toISOString(),

@@ -25,13 +25,15 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const planoId = body.planoId;
-    const servicoId = body.servicoId;
+    const planoId = String(body.planoId || "").trim();
+    const servicoId = String(body.servicoId || "").trim();
+
     const nome = String(body.nome || "").trim();
     const email = String(body.email || "").trim().toLowerCase();
     const telefone = limparTelefone(body.telefone);
     const endereco = String(body.endereco || "").trim();
     const documento = String(body.documento || "").trim();
+
     const senha = String(body.senha || "").trim();
     const confirmarSenha = String(body.confirmarSenha || "").trim();
     const aceitouTermos = Boolean(body.aceitouTermos);
@@ -168,6 +170,19 @@ export async function POST(req: Request) {
 
       cliente = criado;
     }
+
+    await supabase.from("cliente_servicos").upsert(
+      {
+        cliente_id: cliente.id,
+        servico_id: servicoId,
+        plano_id: plano.id,
+        status: "aguardando_pagamento",
+        updated_at: new Date().toISOString(),
+      },
+      {
+        onConflict: "cliente_id,servico_id",
+      }
+    );
 
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL!;
 
