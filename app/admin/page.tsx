@@ -106,15 +106,12 @@ export default function AdminPage() {
     }
   }
 
-  function ehDono(adminParam = admin) {
-    return adminParam?.nivel === "dono";
+  function ehDono() {
+    return admin?.nivel === "dono";
   }
 
   function permissaoAtual() {
-    const nivel = admin?.nivel;
-    const p = permissoes.find((item) => item.nivel === nivel);
-
-    if (nivel === "dono") {
+    if (admin?.nivel === "dono") {
       return {
         pode_ver_resumo: true,
         pode_gerenciar_catalogo: true,
@@ -128,6 +125,7 @@ export default function AdminPage() {
       };
     }
 
+    const p = permissoes.find((item) => item.nivel === admin?.nivel);
     return p || {};
   }
 
@@ -168,33 +166,19 @@ export default function AdminPage() {
   }
 
   async function carregarTudo(token: string, adminParam = admin) {
-    await carregarPermissoes(token, adminParam);
     await recarregarDados(token);
     await carregarDashboard(token);
     await carregarInstancias();
-
-    if (adminParam?.nivel === "dono" || adminParam?.nivel === "admin") {
-      await carregarCatalogo(token);
-    }
-
-    if (
-      adminParam?.nivel === "dono" ||
-      adminParam?.nivel === "admin" ||
-      adminParam?.nivel === "financeiro"
-    ) {
-      await carregarCupons(token);
-    }
+    await carregarCatalogo(token);
+    await carregarCupons(token);
 
     if (adminParam?.nivel === "dono") {
       await carregarUsuariosAdmin(token);
+      await carregarPermissoes(token);
     }
   }
 
-  async function carregarPermissoes(tokenParam?: string, adminParam = admin) {
-    if (adminParam?.nivel !== "dono") {
-      return;
-    }
-
+  async function carregarPermissoes(tokenParam?: string) {
     const token = tokenParam || adminToken;
 
     const res = await fetch("/api/admin/permissoes", {
@@ -659,23 +643,6 @@ export default function AdminPage() {
   }
 
   async function acaoCliente(id: string, acao: string) {
-    if ((acao === "bloquear" || acao === "reativar") && !podeBloquearReativar()) {
-      alert("Seu nível de acesso não permite bloquear ou reativar clientes.");
-      return;
-    }
-
-    if ((acao === "gerar_link" || acao === "cobrar") && !podeFinanceiro()) {
-      alert("Seu nível de acesso não permite ações financeiras.");
-      return;
-    }
-
-    const confirmar =
-      acao === "bloquear"
-        ? confirm("Tem certeza que deseja bloquear este cliente?")
-        : true;
-
-    if (!confirmar) return;
-
     const res = await fetch("/api/admin/cliente-acao", {
       method: "POST",
       headers: {
@@ -920,50 +887,16 @@ export default function AdminPage() {
       </div>
 
       <nav className="flex gap-2 flex-wrap mb-8 bg-zinc-900 border border-zinc-700 p-2 rounded-2xl">
-        {podeVerResumo() && (
-          <Aba ativa={aba === "resumo"} onClick={() => setAba("resumo")}>
-            Resumo
-          </Aba>
-        )}
-
-        {podeGerenciarCatalogo() && (
-          <Aba ativa={aba === "catalogo"} onClick={() => setAba("catalogo")}>
-            Serviços e planos
-          </Aba>
-        )}
-
-        {podeGerenciarCupons() && (
-          <Aba ativa={aba === "cupons"} onClick={() => setAba("cupons")}>
-            Cupons
-          </Aba>
-        )}
-
-        {podeVerClientes() && (
-          <Aba ativa={aba === "clientes"} onClick={() => setAba("clientes")}>
-            Clientes
-          </Aba>
-        )}
-
-        {podeVerInstancias() && (
-          <Aba ativa={aba === "instancias"} onClick={() => setAba("instancias")}>
-            Instâncias
-          </Aba>
-        )}
-
-        {podeGerenciarAdmins() && (
-          <Aba ativa={aba === "usuarios"} onClick={() => setAba("usuarios")}>
-            Usuários admin
-          </Aba>
-        )}
-
-        {ehDono() && (
-          <Aba ativa={aba === "permissoes"} onClick={() => setAba("permissoes")}>
-            Permissões
-          </Aba>
-        )}
+        <Aba ativa={aba === "resumo"} onClick={() => setAba("resumo")}>Resumo</Aba>
+        <Aba ativa={aba === "catalogo"} onClick={() => setAba("catalogo")}>Serviços e planos</Aba>
+        <Aba ativa={aba === "cupons"} onClick={() => setAba("cupons")}>Cupons</Aba>
+        <Aba ativa={aba === "clientes"} onClick={() => setAba("clientes")}>Clientes</Aba>
+        <Aba ativa={aba === "instancias"} onClick={() => setAba("instancias")}>Instâncias</Aba>
+        {ehDono() && <Aba ativa={aba === "usuarios"} onClick={() => setAba("usuarios")}>Usuários admin</Aba>}
+        {ehDono() && <Aba ativa={aba === "permissoes"} onClick={() => setAba("permissoes")}>Permissões</Aba>}
       </nav>
 
-      {aba === "resumo" && podeVerResumo() && (
+      {aba === "resumo" && (
         <section>
           {dashboard && (
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10">
@@ -980,12 +913,340 @@ export default function AdminPage() {
         </section>
       )}
 
+      {aba === "catalogo" && (
+        <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
+          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-6">
+            <div>
+              <h2 className="text-2xl font-bold">Serviços, planos e termos</h2>
+              <p className="text-gray-400 text-sm">
+                Cadastre suas IAs, planos e termos exibidos na tela inicial.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full md:w-auto">
+              <input
+                value={buscaServico}
+                onChange={(e) => setBuscaServico(e.target.value)}
+                placeholder="Pesquisar serviço ou plano..."
+                className="p-3 rounded bg-zinc-800 border border-zinc-700 min-w-[280px]"
+              />
+
+              <select
+                value={filtroServicoStatus}
+                onChange={(e) => setFiltroServicoStatus(e.target.value)}
+                className="p-3 rounded bg-zinc-800 border border-zinc-700"
+              >
+                <option value="todos">Todos</option>
+                <option value="ativos">Serviços ativos</option>
+                <option value="inativos">Serviços inativos</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
+            <div className="border border-zinc-700 rounded-xl p-4">
+              <h3 className="font-bold mb-3">Criar serviço</h3>
+
+              <div className="grid gap-3">
+                <input value={novoServicoNome} onChange={(e) => setNovoServicoNome(e.target.value)} placeholder="Nome do serviço" className="p-3 rounded bg-zinc-800 border border-zinc-700" />
+                <input value={novoServicoSlug} onChange={(e) => setNovoServicoSlug(e.target.value)} placeholder="slug-do-servico" className="p-3 rounded bg-zinc-800 border border-zinc-700" />
+                <textarea value={novoServicoDescricao} onChange={(e) => setNovoServicoDescricao(e.target.value)} placeholder="Descrição do serviço" className="p-3 rounded bg-zinc-800 border border-zinc-700 min-h-24" />
+                <button onClick={criarServico} className="bg-green-600 hover:bg-green-700 py-3 rounded font-bold">Criar serviço</button>
+              </div>
+            </div>
+
+            <div className="border border-zinc-700 rounded-xl p-4">
+              <h3 className="font-bold mb-3">Criar plano</h3>
+
+              <div className="grid gap-3">
+                <select value={novoPlanoServicoId} onChange={(e) => setNovoPlanoServicoId(e.target.value)} className="p-3 rounded bg-zinc-800 border border-zinc-700">
+                  {servicos.map((servico) => (
+                    <option key={servico.id} value={servico.id}>{servico.nome}</option>
+                  ))}
+                </select>
+
+                <input value={novoPlanoNome} onChange={(e) => setNovoPlanoNome(e.target.value)} placeholder="Nome do plano" className="p-3 rounded bg-zinc-800 border border-zinc-700" />
+                <textarea value={novoPlanoDescricao} onChange={(e) => setNovoPlanoDescricao(e.target.value)} placeholder="Descrição do plano" className="p-3 rounded bg-zinc-800 border border-zinc-700 min-h-20" />
+
+                <div className="grid grid-cols-2 gap-3">
+                  <input value={novoPlanoValor} onChange={(e) => setNovoPlanoValor(e.target.value)} placeholder="Valor" className="p-3 rounded bg-zinc-800 border border-zinc-700" />
+                  <input value={novoPlanoMeses} onChange={(e) => setNovoPlanoMeses(e.target.value)} placeholder="Meses" className="p-3 rounded bg-zinc-800 border border-zinc-700" />
+                </div>
+
+                <label className="flex gap-2 items-center">
+                  <input type="checkbox" checked={novoPlanoDestaque} onChange={(e) => setNovoPlanoDestaque(e.target.checked)} />
+                  Plano em destaque
+                </label>
+
+                <button onClick={criarPlanoCatalogo} className="bg-blue-600 hover:bg-blue-700 py-3 rounded font-bold">Criar plano</button>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-6">
+            {servicosFiltrados.map((servico) => {
+              const indexReal = servicos.findIndex((s) => s.id === servico.id);
+
+              return (
+                <div key={servico.id} className="border border-zinc-700 rounded-xl p-4">
+                  <h3 className="font-bold mb-3">Serviço</h3>
+
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
+                    <input value={servico.nome} onChange={(e) => { const novo = [...servicos]; novo[indexReal].nome = e.target.value; setServicos(novo); }} className="p-3 rounded bg-zinc-800 border border-zinc-700" />
+                    <input value={servico.slug} onChange={(e) => { const novo = [...servicos]; novo[indexReal].slug = e.target.value; setServicos(novo); }} className="p-3 rounded bg-zinc-800 border border-zinc-700" />
+                    <input value={servico.ordem || 0} onChange={(e) => { const novo = [...servicos]; novo[indexReal].ordem = Number(e.target.value); setServicos(novo); }} className="p-3 rounded bg-zinc-800 border border-zinc-700" />
+
+                    <label className="flex gap-2 items-center">
+                      <input type="checkbox" checked={servico.ativo} onChange={(e) => { const novo = [...servicos]; novo[indexReal].ativo = e.target.checked; setServicos(novo); }} />
+                      Ativo
+                    </label>
+
+                    <button onClick={() => atualizarServico(servicos[indexReal])} className="bg-blue-600 hover:bg-blue-700 py-3 rounded font-bold">Salvar serviço</button>
+                  </div>
+
+                  <textarea value={servico.descricao || ""} onChange={(e) => { const novo = [...servicos]; novo[indexReal].descricao = e.target.value; setServicos(novo); }} className="w-full p-3 rounded bg-zinc-800 border border-zinc-700 min-h-20 mb-4" />
+
+                  <h4 className="font-bold mb-3">Planos deste serviço</h4>
+
+                  <div className="grid gap-3">
+                    {(servico.planos || []).map((plano: any, pIndex: number) => (
+                      <div key={plano.id} className="grid grid-cols-1 md:grid-cols-8 gap-3 bg-zinc-800 border border-zinc-700 rounded-xl p-3">
+                        <input value={plano.nome} onChange={(e) => { const novo = [...servicos]; novo[indexReal].planos[pIndex].nome = e.target.value; setServicos(novo); }} className="p-2 rounded bg-zinc-900 border border-zinc-700" />
+                        <input value={plano.valor} onChange={(e) => { const novo = [...servicos]; novo[indexReal].planos[pIndex].valor = e.target.value; setServicos(novo); }} className="p-2 rounded bg-zinc-900 border border-zinc-700" />
+                        <input value={plano.meses} onChange={(e) => { const novo = [...servicos]; novo[indexReal].planos[pIndex].meses = Number(e.target.value); setServicos(novo); }} className="p-2 rounded bg-zinc-900 border border-zinc-700" />
+                        <input value={plano.ordem || 0} onChange={(e) => { const novo = [...servicos]; novo[indexReal].planos[pIndex].ordem = Number(e.target.value); setServicos(novo); }} className="p-2 rounded bg-zinc-900 border border-zinc-700" />
+
+                        <label className="flex gap-2 items-center">
+                          <input type="checkbox" checked={plano.ativo} onChange={(e) => { const novo = [...servicos]; novo[indexReal].planos[pIndex].ativo = e.target.checked; setServicos(novo); }} />
+                          Ativo
+                        </label>
+
+                        <label className="flex gap-2 items-center">
+                          <input type="checkbox" checked={plano.destaque} onChange={(e) => { const novo = [...servicos]; novo[indexReal].planos[pIndex].destaque = e.target.checked; setServicos(novo); }} />
+                          Destaque
+                        </label>
+
+                        <button onClick={() => atualizarPlanoCatalogo(servicos[indexReal].planos[pIndex])} className="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded">Salvar</button>
+
+                        <textarea value={plano.descricao || ""} onChange={(e) => { const novo = [...servicos]; novo[indexReal].planos[pIndex].descricao = e.target.value; setServicos(novo); }} placeholder="Descrição" className="md:col-span-8 p-2 rounded bg-zinc-900 border border-zinc-700" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {termos && (
+            <div className="mt-8 border border-zinc-700 rounded-xl p-4">
+              <h3 className="font-bold mb-3">Termos de uso</h3>
+
+              <input value={termos.titulo || ""} onChange={(e) => setTermos({ ...termos, titulo: e.target.value })} className="w-full p-3 rounded bg-zinc-800 border border-zinc-700 mb-3" />
+
+              <textarea value={termos.conteudo || ""} onChange={(e) => setTermos({ ...termos, conteudo: e.target.value })} className="w-full p-3 rounded bg-zinc-800 border border-zinc-700 min-h-40 mb-3" />
+
+              <label className="flex gap-2 items-center mb-3">
+                <input type="checkbox" checked={termos.ativo} onChange={(e) => setTermos({ ...termos, ativo: e.target.checked })} />
+                Termos ativos
+              </label>
+
+              <button onClick={atualizarTermos} className="bg-blue-600 hover:bg-blue-700 px-5 py-3 rounded font-bold">Salvar termos</button>
+            </div>
+          )}
+        </section>
+      )}
+
+      {aba === "cupons" && (
+        <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
+          <h2 className="text-2xl font-bold mb-4">Cupons de desconto</h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+            <input value={buscaCupom} onChange={(e) => setBuscaCupom(e.target.value)} placeholder="Pesquisar cupom..." className="p-3 rounded bg-zinc-800 border border-zinc-700" />
+            <select value={filtroCupomStatus} onChange={(e) => setFiltroCupomStatus(e.target.value)} className="p-3 rounded bg-zinc-800 border border-zinc-700">
+              <option value="todos">Todos</option>
+              <option value="ativos">Ativos</option>
+              <option value="inativos">Inativos</option>
+            </select>
+          </div>
+
+          <div className="border border-zinc-700 rounded-xl p-4 mb-6">
+            <h3 className="font-bold mb-3">Criar cupom</h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <input value={novoCupomCodigo} onChange={(e) => setNovoCupomCodigo(e.target.value.toUpperCase())} placeholder="Código" className="p-3 rounded bg-zinc-800 border border-zinc-700" />
+
+              <select value={novoCupomTipo} onChange={(e) => setNovoCupomTipo(e.target.value)} className="p-3 rounded bg-zinc-800 border border-zinc-700">
+                <option value="percentual">Percentual (%)</option>
+                <option value="fixo">Valor fixo (R$)</option>
+              </select>
+
+              <input value={novoCupomValor} onChange={(e) => setNovoCupomValor(e.target.value)} placeholder="Valor" className="p-3 rounded bg-zinc-800 border border-zinc-700" />
+              <input value={novoCupomLimite} onChange={(e) => setNovoCupomLimite(e.target.value)} placeholder="Limite de usos" className="p-3 rounded bg-zinc-800 border border-zinc-700" />
+
+              <select value={novoCupomServicoId} onChange={(e) => { setNovoCupomServicoId(e.target.value); setNovoCupomPlanoId(""); }} className="p-3 rounded bg-zinc-800 border border-zinc-700">
+                <option value="">Todos os serviços</option>
+                {servicos.map((servico) => (
+                  <option key={servico.id} value={servico.id}>{servico.nome}</option>
+                ))}
+              </select>
+
+              <select value={novoCupomPlanoId} onChange={(e) => setNovoCupomPlanoId(e.target.value)} className="p-3 rounded bg-zinc-800 border border-zinc-700">
+                <option value="">Todos os planos</option>
+                {planosTodos.filter((plano: any) => !novoCupomServicoId || plano.servico_id === novoCupomServicoId).map((plano: any) => (
+                  <option key={plano.id} value={plano.id}>{plano.servico_nome} - {plano.nome}</option>
+                ))}
+              </select>
+
+              <input type="datetime-local" value={novoCupomDataInicio} onChange={(e) => setNovoCupomDataInicio(e.target.value)} className="p-3 rounded bg-zinc-800 border border-zinc-700" />
+              <input type="datetime-local" value={novoCupomDataFim} onChange={(e) => setNovoCupomDataFim(e.target.value)} className="p-3 rounded bg-zinc-800 border border-zinc-700" />
+
+              <textarea value={novoCupomDescricao} onChange={(e) => setNovoCupomDescricao(e.target.value)} placeholder="Descrição" className="md:col-span-3 p-3 rounded bg-zinc-800 border border-zinc-700 min-h-20" />
+
+              <button onClick={criarCupom} className="bg-green-600 hover:bg-green-700 rounded font-bold">Criar cupom</button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto border border-zinc-700 rounded-xl">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-700 text-left bg-zinc-800">
+                  <th className="p-3">Código</th>
+                  <th className="p-3">Tipo</th>
+                  <th className="p-3">Valor</th>
+                  <th className="p-3">Usos</th>
+                  <th className="p-3">Ativo</th>
+                  <th className="p-3">Ação</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {cuponsFiltrados.map((cupom) => {
+                  const indexReal = cupons.findIndex((c) => c.id === cupom.id);
+
+                  return (
+                    <tr key={cupom.id} className="border-b border-zinc-800">
+                      <td className="p-3">
+                        <input value={cupom.codigo} onChange={(e) => { const novo = [...cupons]; novo[indexReal].codigo = e.target.value.toUpperCase(); setCupons(novo); }} className="p-2 rounded bg-zinc-900 border border-zinc-700" />
+                      </td>
+
+                      <td className="p-3">
+                        <select value={cupom.tipo} onChange={(e) => { const novo = [...cupons]; novo[indexReal].tipo = e.target.value; setCupons(novo); }} className="p-2 rounded bg-zinc-900 border border-zinc-700">
+                          <option value="percentual">%</option>
+                          <option value="fixo">R$</option>
+                        </select>
+                      </td>
+
+                      <td className="p-3">
+                        <input value={cupom.valor} onChange={(e) => { const novo = [...cupons]; novo[indexReal].valor = e.target.value; setCupons(novo); }} className="p-2 rounded bg-zinc-900 border border-zinc-700 w-24" />
+                      </td>
+
+                      <td className="p-3">{cupom.usos_atuais || 0} / {cupom.limite_usos || "∞"}</td>
+
+                      <td className="p-3">
+                        <input type="checkbox" checked={cupom.ativo} onChange={(e) => { const novo = [...cupons]; novo[indexReal].ativo = e.target.checked; setCupons(novo); }} />
+                      </td>
+
+                      <td className="p-3">
+                        <button onClick={() => atualizarCupom(cupons[indexReal])} className="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded">Salvar</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {cuponsFiltrados.length === 0 && (
+                  <tr>
+                    <td className="p-5 text-center text-gray-400" colSpan={6}>Nenhum cupom encontrado.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {aba === "clientes" && (
+        <section className="mb-10">
+          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
+            <div>
+              <h2 className="text-2xl font-bold">Clientes</h2>
+              <p className="text-gray-400 text-sm">
+                Exibindo {clientesPaginados.length} de {clientesFiltrados.length} clientes.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full md:w-auto">
+              <input value={buscaCliente} onChange={(e) => setBuscaCliente(e.target.value)} placeholder="Pesquisar cliente, email, telefone..." className="p-3 rounded bg-zinc-800 border border-zinc-700 min-w-[280px]" />
+              <select value={filtroStatusCliente} onChange={(e) => setFiltroStatusCliente(e.target.value)} className="p-3 rounded bg-zinc-800 border border-zinc-700">
+                <option value="todos">Todos os status</option>
+                <option value="ativo">Ativo</option>
+                <option value="vencido">Vencido</option>
+                <option value="aguardando_pagamento">Aguardando pagamento</option>
+              </select>
+            </div>
+          </div>
+
+          <TabelaClientes clientes={clientesPaginados} acaoCliente={acaoCliente} acessarCliente={acessarCliente} />
+
+          <Paginacao pagina={paginaClientes} totalPaginas={totalPaginasClientes} setPagina={setPaginaClientes} />
+        </section>
+      )}
+
+      {aba === "instancias" && (
+        <section>
+          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
+            <div>
+              <h2 className="text-2xl font-bold">Instâncias em Tempo Real</h2>
+              <p className="text-gray-400 text-sm">
+                Exibindo {instanciasPaginadas.length} de {instanciasFiltradas.length} instâncias.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full md:w-auto">
+              <input value={buscaInstancia} onChange={(e) => setBuscaInstancia(e.target.value)} placeholder="Pesquisar instância, número, nome..." className="p-3 rounded bg-zinc-800 border border-zinc-700 min-w-[280px]" />
+              <select value={filtroStatusInstancia} onChange={(e) => setFiltroStatusInstancia(e.target.value)} className="p-3 rounded bg-zinc-800 border border-zinc-700">
+                <option value="todos">Todas</option>
+                <option value="conectado">Conectadas</option>
+                <option value="desconectado">Desconectadas</option>
+              </select>
+            </div>
+          </div>
+
+          <TabelaInstancias instancias={instanciasPaginadas} />
+
+          <Paginacao pagina={paginaInstancias} totalPaginas={totalPaginasInstancias} setPagina={setPaginaInstancias} />
+        </section>
+      )}
+
+      {aba === "usuarios" && ehDono() && (
+        <section className="mb-10 bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
+          <h2 className="text-2xl font-bold mb-4">Usuários administrativos</h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-6">
+            <input value={novoAdminNome} onChange={(e) => setNovoAdminNome(e.target.value)} placeholder="Nome" className="p-3 rounded bg-zinc-800 border border-zinc-700" />
+            <input value={novoAdminEmail} onChange={(e) => setNovoAdminEmail(e.target.value)} placeholder="Email" className="p-3 rounded bg-zinc-800 border border-zinc-700" />
+            <input type="password" value={novoAdminSenha} onChange={(e) => setNovoAdminSenha(e.target.value)} placeholder="Senha forte" className="p-3 rounded bg-zinc-800 border border-zinc-700" />
+
+            <select value={novoAdminNivel} onChange={(e) => setNovoAdminNivel(e.target.value)} className="p-3 rounded bg-zinc-800 border border-zinc-700">
+              <option value="suporte">Suporte</option>
+              <option value="financeiro">Financeiro</option>
+              <option value="admin">Admin</option>
+              <option value="dono">Dono</option>
+            </select>
+
+            <button onClick={criarUsuarioAdmin} className="bg-green-600 hover:bg-green-700 py-3 rounded font-bold">Criar usuário</button>
+          </div>
+
+          <input value={buscaUsuarioAdmin} onChange={(e) => setBuscaUsuarioAdmin(e.target.value)} placeholder="Buscar usuário admin para exibir a lista..." className="w-full p-3 rounded bg-zinc-800 border border-zinc-700 mb-4" />
+
+          {buscaUsuarioAdmin.trim() && (
+            <TabelaUsuarios usuarios={usuariosAdminFiltrados} atualizarUsuarioAdmin={atualizarUsuarioAdmin} alterarSenhaAdmin={alterarSenhaAdmin} />
+          )}
+        </section>
+      )}
+
       {aba === "permissoes" && ehDono() && (
         <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
           <h2 className="text-2xl font-bold mb-2">Permissões por nível</h2>
-          <p className="text-gray-400 text-sm mb-6">
-            O nível dono sempre tem acesso total e não pode ser alterado.
-          </p>
 
           <div className="overflow-x-auto border border-zinc-700 rounded-xl">
             <table className="w-full text-sm">
@@ -1036,178 +1297,13 @@ export default function AdminPage() {
                     ))}
 
                     <td className="p-3">
-                      <button
-                        disabled={permissao.nivel === "dono"}
-                        onClick={() => salvarPermissao(permissao)}
-                        className="bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 px-3 py-2 rounded"
-                      >
-                        Salvar
-                      </button>
+                      <button disabled={permissao.nivel === "dono"} onClick={() => salvarPermissao(permissao)} className="bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 px-3 py-2 rounded">Salvar</button>
                     </td>
                   </tr>
                 ))}
-
-                {permissoes.length === 0 && (
-                  <tr>
-                    <td className="p-5 text-center text-gray-400" colSpan={11}>
-                      Nenhuma permissão encontrada.
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
-        </section>
-      )}
-
-      {aba === "clientes" && podeVerClientes() && (
-        <section className="mb-10">
-          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
-            <div>
-              <h2 className="text-2xl font-bold">Clientes</h2>
-              <p className="text-gray-400 text-sm">
-                Exibindo {clientesPaginados.length} de {clientesFiltrados.length} clientes.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full md:w-auto">
-              <input
-                value={buscaCliente}
-                onChange={(e) => setBuscaCliente(e.target.value)}
-                placeholder="Pesquisar cliente, email, telefone..."
-                className="p-3 rounded bg-zinc-800 border border-zinc-700 min-w-[280px]"
-              />
-
-              <select
-                value={filtroStatusCliente}
-                onChange={(e) => setFiltroStatusCliente(e.target.value)}
-                className="p-3 rounded bg-zinc-800 border border-zinc-700"
-              >
-                <option value="todos">Todos os status</option>
-                <option value="ativo">Ativo</option>
-                <option value="vencido">Vencido</option>
-                <option value="aguardando_pagamento">Aguardando pagamento</option>
-              </select>
-            </div>
-          </div>
-
-          <TabelaClientes
-            clientes={clientesPaginados}
-            podeBloquearReativar={podeBloquearReativar()}
-            podeFinanceiro={podeFinanceiro()}
-            podeAcessarCliente={podeAcessarCliente()}
-            acaoCliente={acaoCliente}
-            acessarCliente={acessarCliente}
-          />
-
-          <Paginacao
-            pagina={paginaClientes}
-            totalPaginas={totalPaginasClientes}
-            setPagina={setPaginaClientes}
-          />
-        </section>
-      )}
-
-      {aba === "instancias" && podeVerInstancias() && (
-        <section>
-          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
-            <div>
-              <h2 className="text-2xl font-bold">Instâncias em Tempo Real</h2>
-              <p className="text-gray-400 text-sm">
-                Exibindo {instanciasPaginadas.length} de {instanciasFiltradas.length} instâncias.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full md:w-auto">
-              <input
-                value={buscaInstancia}
-                onChange={(e) => setBuscaInstancia(e.target.value)}
-                placeholder="Pesquisar instância, número, nome..."
-                className="p-3 rounded bg-zinc-800 border border-zinc-700 min-w-[280px]"
-              />
-
-              <select
-                value={filtroStatusInstancia}
-                onChange={(e) => setFiltroStatusInstancia(e.target.value)}
-                className="p-3 rounded bg-zinc-800 border border-zinc-700"
-              >
-                <option value="todos">Todas</option>
-                <option value="conectado">Conectadas</option>
-                <option value="desconectado">Desconectadas</option>
-              </select>
-            </div>
-          </div>
-
-          <TabelaInstancias instancias={instanciasPaginadas} />
-
-          <Paginacao
-            pagina={paginaInstancias}
-            totalPaginas={totalPaginasInstancias}
-            setPagina={setPaginaInstancias}
-          />
-        </section>
-      )}
-
-      {aba === "usuarios" && podeGerenciarAdmins() && (
-        <section className="mb-10 bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
-          <h2 className="text-2xl font-bold mb-4">Usuários administrativos</h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-6">
-            <input
-              value={novoAdminNome}
-              onChange={(e) => setNovoAdminNome(e.target.value)}
-              placeholder="Nome"
-              className="p-3 rounded bg-zinc-800 border border-zinc-700"
-            />
-
-            <input
-              value={novoAdminEmail}
-              onChange={(e) => setNovoAdminEmail(e.target.value)}
-              placeholder="Email"
-              className="p-3 rounded bg-zinc-800 border border-zinc-700"
-            />
-
-            <input
-              type="password"
-              value={novoAdminSenha}
-              onChange={(e) => setNovoAdminSenha(e.target.value)}
-              placeholder="Senha forte"
-              className="p-3 rounded bg-zinc-800 border border-zinc-700"
-            />
-
-            <select
-              value={novoAdminNivel}
-              onChange={(e) => setNovoAdminNivel(e.target.value)}
-              className="p-3 rounded bg-zinc-800 border border-zinc-700"
-            >
-              <option value="suporte">Suporte</option>
-              <option value="financeiro">Financeiro</option>
-              <option value="admin">Admin</option>
-              <option value="dono">Dono</option>
-            </select>
-
-            <button
-              onClick={criarUsuarioAdmin}
-              className="bg-green-600 hover:bg-green-700 py-3 rounded font-bold"
-            >
-              Criar usuário
-            </button>
-          </div>
-
-          <input
-            value={buscaUsuarioAdmin}
-            onChange={(e) => setBuscaUsuarioAdmin(e.target.value)}
-            placeholder="Buscar usuário admin para exibir a lista..."
-            className="w-full p-3 rounded bg-zinc-800 border border-zinc-700 mb-4"
-          />
-
-          {buscaUsuarioAdmin.trim() && (
-            <TabelaUsuarios
-              usuarios={usuariosAdminFiltrados}
-              atualizarUsuarioAdmin={atualizarUsuarioAdmin}
-              alterarSenhaAdmin={alterarSenhaAdmin}
-            />
-          )}
         </section>
       )}
     </main>
@@ -1216,12 +1312,7 @@ export default function AdminPage() {
 
 function Aba({ ativa, onClick, children }: any) {
   return (
-    <button
-      onClick={onClick}
-      className={`px-4 py-3 rounded-xl font-semibold ${
-        ativa ? "bg-green-600 text-white" : "bg-zinc-800 text-gray-300"
-      }`}
-    >
+    <button onClick={onClick} className={`px-4 py-3 rounded-xl font-semibold ${ativa ? "bg-green-600 text-white" : "bg-zinc-800 text-gray-300"}`}>
       {children}
     </button>
   );
@@ -1237,28 +1328,12 @@ function Card({ titulo, valor }: { titulo: string; valor: any }) {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const cor =
-    status === "ativo"
-      ? "bg-green-900/40 text-green-400 border-green-700"
-      : status === "vencido"
-      ? "bg-red-900/40 text-red-400 border-red-700"
-      : "bg-yellow-900/40 text-yellow-400 border-yellow-700";
+  const cor = status === "ativo" ? "bg-green-900/40 text-green-400 border-green-700" : status === "vencido" ? "bg-red-900/40 text-red-400 border-red-700" : "bg-yellow-900/40 text-yellow-400 border-yellow-700";
 
-  return (
-    <span className={`px-3 py-1 rounded-full border text-xs font-bold ${cor}`}>
-      {status}
-    </span>
-  );
+  return <span className={`px-3 py-1 rounded-full border text-xs font-bold ${cor}`}>{status}</span>;
 }
 
-function TabelaClientes({
-  clientes,
-  podeBloquearReativar,
-  podeFinanceiro,
-  podeAcessarCliente,
-  acaoCliente,
-  acessarCliente,
-}: any) {
+function TabelaClientes({ clientes, acaoCliente, acessarCliente }: any) {
   return (
     <div className="overflow-x-auto bg-zinc-900 border border-zinc-700 rounded-xl">
       <table className="w-full text-sm">
@@ -1281,71 +1356,22 @@ function TabelaClientes({
               <td className="p-3">{cliente.email}</td>
               <td className="p-3">{cliente.telefone || "-"}</td>
               <td className="p-3">{cliente.plano_id}</td>
-              <td className="p-3">
-                <StatusBadge status={cliente.status} />
-              </td>
-              <td className="p-3">
-                {cliente.data_expiracao
-                  ? new Date(cliente.data_expiracao).toLocaleDateString("pt-BR")
-                  : "-"}
-              </td>
+              <td className="p-3"><StatusBadge status={cliente.status} /></td>
+              <td className="p-3">{cliente.data_expiracao ? new Date(cliente.data_expiracao).toLocaleDateString("pt-BR") : "-"}</td>
               <td className="p-3">
                 <div className="flex gap-2 flex-wrap">
-                  {podeAcessarCliente && (
-                    <button
-                      onClick={() => acessarCliente(cliente.id)}
-                      className="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded"
-                    >
-                      Entrar
-                    </button>
-                  )}
-
-                  {podeBloquearReativar && (
-                    <>
-                      <button
-                        onClick={() => acaoCliente(cliente.id, "bloquear")}
-                        className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded"
-                      >
-                        Bloquear
-                      </button>
-
-                      <button
-                        onClick={() => acaoCliente(cliente.id, "reativar")}
-                        className="bg-green-600 hover:bg-green-700 px-3 py-1 rounded"
-                      >
-                        Reativar
-                      </button>
-                    </>
-                  )}
-
-                  {podeFinanceiro && (
-                    <>
-                      <button
-                        onClick={() => acaoCliente(cliente.id, "gerar_link")}
-                        className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded"
-                      >
-                        Link
-                      </button>
-
-                      <button
-                        onClick={() => acaoCliente(cliente.id, "cobrar")}
-                        className="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded"
-                      >
-                        Cobrar
-                      </button>
-                    </>
-                  )}
+                  <button onClick={() => acessarCliente(cliente.id)} className="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded">Entrar</button>
+                  <button onClick={() => acaoCliente(cliente.id, "bloquear")} className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded">Bloquear</button>
+                  <button onClick={() => acaoCliente(cliente.id, "reativar")} className="bg-green-600 hover:bg-green-700 px-3 py-1 rounded">Reativar</button>
+                  <button onClick={() => acaoCliente(cliente.id, "gerar_link")} className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded">Link</button>
+                  <button onClick={() => acaoCliente(cliente.id, "cobrar")} className="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded">Cobrar</button>
                 </div>
               </td>
             </tr>
           ))}
 
           {clientes.length === 0 && (
-            <tr>
-              <td className="p-5 text-center text-gray-400" colSpan={7}>
-                Nenhum cliente encontrado.
-              </td>
-            </tr>
+            <tr><td className="p-5 text-center text-gray-400" colSpan={7}>Nenhum cliente encontrado.</td></tr>
           )}
         </tbody>
       </table>
@@ -1371,13 +1397,7 @@ function TabelaInstancias({ instancias }: any) {
           {instancias.map((instancia: any, index: number) => (
             <tr key={index} className="border-b border-zinc-800">
               <td className="p-3">
-                <span
-                  className={`px-3 py-1 rounded-full border text-xs font-bold ${
-                    instancia.conectado
-                      ? "bg-green-900/40 text-green-400 border-green-700"
-                      : "bg-red-900/40 text-red-400 border-red-700"
-                  }`}
-                >
+                <span className={`px-3 py-1 rounded-full border text-xs font-bold ${instancia.conectado ? "bg-green-900/40 text-green-400 border-green-700" : "bg-red-900/40 text-red-400 border-red-700"}`}>
                   {instancia.conectado ? "Conectada" : "Desconectada"}
                 </span>
               </td>
@@ -1389,11 +1409,7 @@ function TabelaInstancias({ instancias }: any) {
           ))}
 
           {instancias.length === 0 && (
-            <tr>
-              <td className="p-5 text-center text-gray-400" colSpan={5}>
-                Nenhuma instância encontrada.
-              </td>
-            </tr>
+            <tr><td className="p-5 text-center text-gray-400" colSpan={5}>Nenhuma instância encontrada.</td></tr>
           )}
         </tbody>
       </table>
@@ -1401,11 +1417,7 @@ function TabelaInstancias({ instancias }: any) {
   );
 }
 
-function TabelaUsuarios({
-  usuarios,
-  atualizarUsuarioAdmin,
-  alterarSenhaAdmin,
-}: any) {
+function TabelaUsuarios({ usuarios, atualizarUsuarioAdmin, alterarSenhaAdmin }: any) {
   return (
     <div className="overflow-x-auto border border-zinc-700 rounded-xl">
       <table className="w-full text-sm">
@@ -1428,30 +1440,15 @@ function TabelaUsuarios({
               <td className="p-3">{usuario.ativo ? "Sim" : "Não"}</td>
               <td className="p-3">
                 <div className="flex gap-2 flex-wrap">
-                  <button
-                    onClick={() => atualizarUsuarioAdmin(usuario)}
-                    className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded"
-                  >
-                    Salvar
-                  </button>
-
-                  <button
-                    onClick={() => alterarSenhaAdmin(usuario)}
-                    className="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded"
-                  >
-                    Alterar senha
-                  </button>
+                  <button onClick={() => atualizarUsuarioAdmin(usuario)} className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded">Salvar</button>
+                  <button onClick={() => alterarSenhaAdmin(usuario)} className="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded">Alterar senha</button>
                 </div>
               </td>
             </tr>
           ))}
 
           {usuarios.length === 0 && (
-            <tr>
-              <td className="p-5 text-center text-gray-400" colSpan={5}>
-                Nenhum usuário encontrado.
-              </td>
-            </tr>
+            <tr><td className="p-5 text-center text-gray-400" colSpan={5}>Nenhum usuário encontrado.</td></tr>
           )}
         </tbody>
       </table>
@@ -1459,36 +1456,12 @@ function TabelaUsuarios({
   );
 }
 
-function Paginacao({
-  pagina,
-  totalPaginas,
-  setPagina,
-}: {
-  pagina: number;
-  totalPaginas: number;
-  setPagina: (pagina: number) => void;
-}) {
+function Paginacao({ pagina, totalPaginas, setPagina }: { pagina: number; totalPaginas: number; setPagina: (pagina: number) => void }) {
   return (
     <div className="flex items-center justify-center gap-3 mt-5">
-      <button
-        onClick={() => setPagina(Math.max(1, pagina - 1))}
-        disabled={pagina <= 1}
-        className="px-4 py-2 rounded bg-zinc-800 border border-zinc-700 disabled:opacity-40"
-      >
-        Anterior
-      </button>
-
-      <span className="text-gray-300 text-sm">
-        Página {pagina} de {totalPaginas}
-      </span>
-
-      <button
-        onClick={() => setPagina(Math.min(totalPaginas, pagina + 1))}
-        disabled={pagina >= totalPaginas}
-        className="px-4 py-2 rounded bg-zinc-800 border border-zinc-700 disabled:opacity-40"
-      >
-        Próxima
-      </button>
+      <button onClick={() => setPagina(Math.max(1, pagina - 1))} disabled={pagina <= 1} className="px-4 py-2 rounded bg-zinc-800 border border-zinc-700 disabled:opacity-40">Anterior</button>
+      <span className="text-gray-300 text-sm">Página {pagina} de {totalPaginas}</span>
+      <button onClick={() => setPagina(Math.min(totalPaginas, pagina + 1))} disabled={pagina >= totalPaginas} className="px-4 py-2 rounded bg-zinc-800 border border-zinc-700 disabled:opacity-40">Próxima</button>
     </div>
   );
 }
