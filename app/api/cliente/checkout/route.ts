@@ -20,39 +20,30 @@ async function validarCliente(token: string) {
     ? new Date(data.session_expires_at)
     : null;
 
-  if (!expira || expira < new Date()) {
-    return null;
-  }
+  if (!expira || expira < new Date()) return null;
 
   return data;
 }
 
-function calcularDesconto(valor: number, cupom: any) {
-  if (!cupom) {
-    return {
-      valorOriginal: valor,
-      descontoValor: 0,
-      valorFinal: valor,
-    };
+async function planoJaContratado(clienteId: string, servicoId: string, planoId: string) {
+  const agora = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from("cliente_servicos")
+    .select("*")
+    .eq("cliente_id", clienteId)
+    .eq("servico_id", servicoId)
+    .eq("plano_id", planoId)
+    .in("status", ["ativo", "aguardando_pagamento"])
+    .or(`data_expiracao.is.null,data_expiracao.gte.${agora}`)
+    .limit(1);
+
+  if (error) {
+    console.log("ERRO VERIFICAR PLANO DUPLICADO:", error.message);
+    return false;
   }
 
-  let descontoValor = 0;
-
-  if (cupom.tipo === "percentual") {
-    descontoValor = (valor * Number(cupom.valor || 0)) / 100;
-  } else {
-    descontoValor = Number(cupom.valor || 0);
-  }
-
-  if (descontoValor > valor) {
-    descontoValor = valor;
-  }
-
-  return {
-    valorOriginal: valor,
-    descontoValor,
-    valorFinal: Number(valor) - Number(descontoValor),
-  };
+  return (data || []).length > 0;
 }
 
 async function validarCupom(codigo: string | null) {
@@ -67,17 +58,12 @@ async function validarCupom(codigo: string | null) {
 
   if (!data) return null;
 
-  if (data.validade) {
-    const validade = new Date(data.validade);
-
-    if (validade < new Date()) {
-      return null;
-    }
-  }
+  if (data.data_inicio && new Date(data.data_inicio) > new Date()) return null;
+  if (data.data_fim && new Date(data.data_fim) < new Date()) return null;
 
   if (
-    data.maximo_uso &&
-    Number(data.usado || 0) >= Number(data.maximo_uso)
+    data.limite_usos &&
+    Number(data.usos_atuais || 0) >= Number(data.limite_usos)
   ) {
     return null;
   }
@@ -85,113 +71,121 @@ async function validarCupom(codigo: string | null) {
   return data;
 }
 
-async function clienteJaPossuiPlano(
-  clienteId: string,
-  servicoId: string,
-  planoId: string
-) {
-  const { data } = await supabase
-    .from("cliente_servicos")
-    .select("*")
-    .eq("cliente_id", clienteId)
-    .eq("servico_id", servicoId)
-    .eq("plano_id", planoId)
-    .in("status", ["ativo", "aguardando_pagamento"]);
+function calcularValores(valor: number, cupom: any) {
+  let desconto = 0;
 
-  return (data || []).length > 0;
+  if (cupom) {
+    if (cupom.tipo === "percentual") {
+      desconto = (valor * Number(cupom.valor || 0)) / 100;
+    } else {
+      desconto = Number(cupom.valor || 0);
+    }
+  }
+
+  if (desconto > valor) desconto = valor;
+
+  return {
+    valor_original: valor,
+    desconto_valor: desconto,
+    valor_final: Number((valor - desconto).toFixed(2)),
+  };
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const {
-      token,
-      plano_id,
-      servico_id,
-      cupom_codigo,
-    } = body;
+    const token = body.token;
+    const servicoId = body.servico_id;
+    const planoId = body.plano_id;
+    const cupomCodigo = body.cupom_codigo || null;
 
     if (!token) {
-      return NextResponse.json(
-        { error: "Sessão inválida" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Sessão inválida" }, { status: 401 });
     }
 
     const cliente = await validarCliente(token);
 
     if (!cliente) {
-      return NextResponse.json(
-        { error: "Sessão expirada" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Sessão expirada" }, { status: 401 });
     }
 
-    if (!plano_id || !servico_id) {
+    if (!servicoId || !planoId) {
       return NextResponse.json(
-        { error: "Plano inválido" },
+        { error: "Serviço e plano são obrigatórios" },
         { status: 400 }
-      );
-    }
-
-    const { data: plano } = await supabase
-      .from("planos")
-      .select("*")
-      .eq("id", plano_id)
-      .maybeSingle();
-
-    if (!plano) {
-      return NextResponse.json(
-        { error: "Plano não encontrado" },
-        { status: 404 }
       );
     }
 
     const { data: servico } = await supabase
       .from("servicos_ia")
       .select("*")
-      .eq("id", servico_id)
+      .eq("id", servicoId)
+      .eq("ativo", true)
       .maybeSingle();
 
     if (!servico) {
       return NextResponse.json(
-        { error: "Serviço não encontrado" },
+        { error: "Serviço não encontrado ou inativo" },
         { status: 404 }
       );
     }
 
-    const jaPossui = await clienteJaPossuiPlano(
+    const { data: plano } = await supabase
+      .from("planos")
+      .select("*")
+      .eq("id", planoId)
+      .eq("servico_id", servicoId)
+      .eq("ativo", true)
+      .maybeSingle();
+
+    if (!plano) {
+      return NextResponse.json(
+        { error: "Plano não encontrado ou inativo" },
+        { status: 404 }
+      );
+    }
+
+    const jaTemMesmoPlano = await planoJaContratado(
       cliente.id,
       servico.id,
       plano.id
     );
 
-    if (jaPossui) {
+    if (jaTemMesmoPlano) {
       return NextResponse.json(
         {
           error:
-            "Você já possui este plano ativo ou aguardando pagamento.",
+            "Você já possui este mesmo plano ativo ou aguardando pagamento. Escolha outro plano do serviço ou aguarde o vencimento.",
         },
+        { status: 409 }
+      );
+    }
+
+    const cupom = await validarCupom(cupomCodigo);
+    const valores = calcularValores(Number(plano.valor || 0), cupom);
+
+    if (valores.valor_final <= 0) {
+      return NextResponse.json(
+        { error: "Valor final inválido" },
         { status: 400 }
       );
     }
 
-    const cupom = await validarCupom(cupom_codigo || null);
-
-    const valores = calcularDesconto(
-      Number(plano.valor || 0),
-      cupom
-    );
+    const appUrl =
+      process.env.NEXT_PUBLIC_APP_URL ||
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      "";
 
     const preferenceBody = {
       items: [
         {
           id: plano.id,
           title: `${servico.nome} - ${plano.nome}`,
+          description: plano.descricao || servico.descricao || "",
           quantity: 1,
           currency_id: "BRL",
-          unit_price: Number(valores.valorFinal),
+          unit_price: valores.valor_final,
         },
       ],
 
@@ -205,24 +199,23 @@ export async function POST(req: Request) {
         servico_id: servico.id,
         plano_id: plano.id,
         meses: plano.meses,
-        valor_original: valores.valorOriginal,
-        desconto_valor: valores.descontoValor,
+        valor_original: valores.valor_original,
+        desconto_valor: valores.desconto_valor,
         cupom_codigo: cupom?.codigo || null,
         nome: cliente.nome,
         email: cliente.email,
         telefone: cliente.telefone || null,
       },
 
-      notification_url:
-        process.env.MERCADOPAGO_WEBHOOK_URL,
-
-      auto_return: "approved",
+      notification_url: process.env.MERCADOPAGO_WEBHOOK_URL,
 
       back_urls: {
-        success: `${process.env.NEXT_PUBLIC_APP_URL}/cliente?sucesso=1`,
-        pending: `${process.env.NEXT_PUBLIC_APP_URL}/cliente?pendente=1`,
-        failure: `${process.env.NEXT_PUBLIC_APP_URL}/cliente?erro=1`,
+        success: `${appUrl}/cliente?sucesso=1`,
+        pending: `${appUrl}/cliente?pendente=1`,
+        failure: `${appUrl}/cliente?erro=1`,
       },
+
+      auto_return: "approved",
     };
 
     const response = await axios.post(
@@ -240,7 +233,7 @@ export async function POST(req: Request) {
       await supabase
         .from("cupons")
         .update({
-          usado: Number(cupom.usado || 0) + 1,
+          usos_atuais: Number(cupom.usos_atuais || 0) + 1,
         })
         .eq("id", cupom.id);
     }
@@ -249,24 +242,11 @@ export async function POST(req: Request) {
       ok: true,
       init_point: response.data.init_point,
       sandbox_init_point: response.data.sandbox_init_point,
-
-      plano: {
-        id: plano.id,
-        nome: plano.nome,
-      },
-
-      servico: {
-        id: servico.id,
-        nome: servico.nome,
-      },
-
+      preference_id: response.data.id,
       valores,
     });
   } catch (error: any) {
-    console.log(
-      "ERRO CHECKOUT CLIENTE:",
-      error.response?.data || error.message
-    );
+    console.log("ERRO CHECKOUT CLIENTE:", error.response?.data || error.message);
 
     return NextResponse.json(
       {
