@@ -232,21 +232,25 @@ async function ativarOuRenovarServico(params: {
   const plano = params.plano;
   const meses = Number(params.meses || plano?.meses || 1);
 
-  const { data: vinculoExistente } = await supabase
+  const { data: vinculoMesmoPlano } = await supabase
     .from("cliente_servicos")
     .select("*")
     .eq("cliente_id", cliente.id)
     .eq("servico_id", servico.id)
+    .eq("plano_id", plano.id)
+    .in("status", ["ativo", "aguardando_pagamento", "vencido"])
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   const novaExpiracao = calcularNovaExpiracao(
-    vinculoExistente?.data_expiracao || cliente.data_expiracao,
+    vinculoMesmoPlano?.data_expiracao || cliente.data_expiracao,
     meses
   );
 
-  const inicio = vinculoExistente?.data_inicio || new Date().toISOString();
+  const inicio = vinculoMesmoPlano?.data_inicio || new Date().toISOString();
 
-  if (vinculoExistente?.id) {
+  if (vinculoMesmoPlano?.id) {
     const { error } = await supabase
       .from("cliente_servicos")
       .update({
@@ -256,7 +260,7 @@ async function ativarOuRenovarServico(params: {
         data_expiracao: novaExpiracao.toISOString(),
         updated_at: new Date().toISOString(),
       })
-      .eq("id", vinculoExistente.id);
+      .eq("id", vinculoMesmoPlano.id);
 
     if (error) throw new Error(`Erro ao renovar serviço: ${error.message}`);
   } else {
@@ -271,7 +275,7 @@ async function ativarOuRenovarServico(params: {
       updated_at: new Date().toISOString(),
     });
 
-    if (error) throw new Error(`Erro ao ativar serviço: ${error.message}`);
+    if (error) throw new Error(`Erro ao ativar novo plano do serviço: ${error.message}`);
   }
 
   const { error: clienteError } = await supabase
