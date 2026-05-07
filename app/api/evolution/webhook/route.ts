@@ -175,7 +175,10 @@ export async function POST(req: Request) {
         .eq("servico_id", servicoId);
     }
 
-    let n8n = { enviado: false, motivo: "evento não encaminhado" };
+    let n8n: any = {
+	enviado: false,
+	motivo: "evento não encaminhado",
+};
 
     const eventoNormalizado = String(evento || "").toUpperCase();
 
