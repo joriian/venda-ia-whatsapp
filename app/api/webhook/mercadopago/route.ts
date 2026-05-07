@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import axios from "axios";
 import crypto from "crypto";
+import {
+  configurarInstanciaCompleta,
+  gerarInstanceName,
+} from "@/lib/evolution-config";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -9,10 +13,6 @@ const supabase = createClient(
 );
 
 type MpPayment = any;
-
-function gerarInstanceName(clienteId: string) {
-  return `cliente_${clienteId}`.replace(/-/g, "");
-}
 
 function normalizarStatusPagamento(status: string) {
   const s = String(status || "").toLowerCase();
@@ -37,19 +37,6 @@ function calcularNovaExpiracao(dataAtual: any, meses: number) {
   return somarMeses(base, meses);
 }
 
-async function buscarPagamentoMercadoPago(paymentId: string) {
-  const response = await axios.get(
-    `https://api.mercadopago.com/v1/payments/${paymentId}`,
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.MERCADOPAGO_ACCESS_TOKEN}`,
-      },
-    }
-  );
-
-  return response.data;
-}
-
 function extrairPaymentId(body: any) {
   const dataId = body?.data?.id;
 
@@ -64,6 +51,19 @@ function extrairPaymentId(body: any) {
   }
 
   return null;
+}
+
+async function buscarPagamentoMercadoPago(paymentId: string) {
+  const response = await axios.get(
+    `https://api.mercadopago.com/v1/payments/${paymentId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.MERCADOPAGO_ACCESS_TOKEN}`,
+      },
+    }
+  );
+
+  return response.data;
 }
 
 async function buscarOuCriarCliente(payment: MpPayment) {
@@ -179,7 +179,9 @@ async function registrarPagamento(params: {
 }) {
   const paymentId = String(params.payment.id);
   const status = normalizarStatusPagamento(params.payment.status);
-  const valor = Number(params.payment.transaction_amount || params.payment.total_paid_amount || 0);
+  const valor = Number(
+    params.payment.transaction_amount || params.payment.total_paid_amount || 0
+  );
 
   const registro = {
     cliente_id: params.clienteId,
@@ -191,7 +193,10 @@ async function registrarPagamento(params: {
     cupom_codigo: params.cupomCodigo,
     desconto_valor: params.descontoValor || 0,
     valor_original: params.valorOriginal || valor,
-    criado_em: params.payment.date_approved || params.payment.date_created || new Date().toISOString(),
+    criado_em:
+      params.payment.date_approved ||
+      params.payment.date_created ||
+      new Date().toISOString(),
   };
 
   const { data: existente } = await supabase
@@ -258,6 +263,8 @@ async function ativarOuRenovarServico(params: {
         status: "ativo",
         data_inicio: inicio,
         data_expiracao: novaExpiracao.toISOString(),
+        workflow_id: servico.workflow_id || null,
+        webhook_url: servico.webhook_url || null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", vinculoMesmoPlano.id);
@@ -271,11 +278,16 @@ async function ativarOuRenovarServico(params: {
       status: "ativo",
       data_inicio: inicio,
       data_expiracao: novaExpiracao.toISOString(),
+      workflow_id: servico.workflow_id || null,
+      webhook_url: servico.webhook_url || null,
+      evolution_configurado: false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
 
-    if (error) throw new Error(`Erro ao ativar novo plano do serviço: ${error.message}`);
+    if (error) {
+      throw new Error(`Erro ao ativar novo plano do serviço: ${error.message}`);
+    }
   }
 
   const { error: clienteError } = await supabase
@@ -314,75 +326,61 @@ async function marcarAguardandoPagamento(clienteId: string, servicoId?: string |
   }
 }
 
-async function criarOuGarantirInstancia(clienteId: string) {
-  if (!process.env.EVOLUTION_API_URL || !process.env.EVOLUTION_API_KEY) {
-    return { ok: false, motivo: "Evolution API não configurada" };
+function normalizarEventosEvolution(servico: any) {
+  const eventos = servico?.evolution_events;
+
+  if (Array.isArray(eventos) && eventos.length > 0) {
+    return eventos.map((e) => String(e).toUpperCase());
   }
 
-  const instanceName = gerarInstanceName(clienteId);
+  return ["MESSAGES_UPSERT", "CONNECTION_UPDATE"];
+}
 
-  try {
-    const lista = await axios.get(
-      `${process.env.EVOLUTION_API_URL}/instance/fetchInstances`,
-      {
-        headers: {
-          apikey: process.env.EVOLUTION_API_KEY,
-        },
-      }
-    );
+async function configurarEvolutionDoServico(clienteId: string, servico: any) {
+  const webhookUrl = servico.webhook_url || process.env.DEFAULT_N8N_WEBHOOK_URL;
 
-    const instancias = Array.isArray(lista.data)
-      ? lista.data
-      : lista.data?.instances || [];
+  if (!webhookUrl) {
+    console.log("WEBHOOK DO SERVIÇO NÃO CONFIGURADO:", servico.id);
+    return {
+      ok: false,
+      motivo: "webhook_url ausente no serviço e DEFAULT_N8N_WEBHOOK_URL não configurado",
+    };
+  }
 
-    const existe = instancias.some((item: any) => {
-      const nome =
-        item?.instanceName ||
-        item?.instance?.instanceName ||
-        item?.name ||
-        item?.instance;
+  const configuracao = await configurarInstanciaCompleta({
+    clienteId,
+    webhookUrl,
+    events: normalizarEventosEvolution(servico),
+    webhookEnabled: servico.evolution_webhook_enabled ?? true,
+    webhookBase64: servico.evolution_webhook_base64 ?? true,
+  });
 
-      return nome === instanceName;
-    });
+  await supabase
+    .from("cliente_servicos")
+    .update({
+      workflow_id: servico.workflow_id || null,
+      webhook_url: webhookUrl,
+      evolution_configurado: true,
+      evolution_configurado_em: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("cliente_id", clienteId)
+    .eq("servico_id", servico.id);
 
-    if (existe) {
-      return { ok: true, instanceName, jaExistia: true };
+  await supabase.from("instancias_evolution").upsert(
+    {
+      cliente_id: clienteId,
+      instance_name: gerarInstanceName(clienteId),
+      status: "qrcode",
+      servico_id: servico.id,
+      updated_at: new Date().toISOString(),
+    },
+    {
+      onConflict: "cliente_id",
     }
-  } catch (error: any) {
-    console.log("ERRO LISTAR INSTANCIAS EVOLUTION:", error.response?.data || error.message);
-  }
+  );
 
-  try {
-    await axios.post(
-      `${process.env.EVOLUTION_API_URL}/instance/create`,
-      {
-        instanceName,
-        integration: "WHATSAPP-BAILEYS",
-        qrcode: true,
-      },
-      {
-        headers: {
-          apikey: process.env.EVOLUTION_API_KEY,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    await supabase.from("instancias_evolution").upsert(
-      {
-        cliente_id: clienteId,
-        instance_name: instanceName,
-        status: "qrcode",
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "cliente_id" }
-    );
-
-    return { ok: true, instanceName, criada: true };
-  } catch (error: any) {
-    console.log("ERRO CRIAR INSTANCIA EVOLUTION:", error.response?.data || error.message);
-    return { ok: false, instanceName, erro: error.response?.data || error.message };
-  }
+  return configuracao;
 }
 
 export async function POST(req: Request) {
@@ -467,7 +465,21 @@ export async function POST(req: Request) {
       meses: Number(metadata.meses || plano.meses || 1),
     });
 
-    const instancia = await criarOuGarantirInstancia(cliente.id);
+    let instancia: any = null;
+
+    try {
+      instancia = await configurarEvolutionDoServico(cliente.id, servico);
+    } catch (error: any) {
+      console.log(
+        "ERRO CONFIGURAR EVOLUTION:",
+        error.response?.data || error.message
+      );
+
+      instancia = {
+        ok: false,
+        erro: error.response?.data || error.message,
+      };
+    }
 
     return NextResponse.json({
       ok: true,
