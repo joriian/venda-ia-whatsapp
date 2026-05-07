@@ -3,12 +3,24 @@ import axios from "axios";
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL!;
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY!;
 
-export function gerarInstanceName(clienteId: string) {
-  return `cliente_${clienteId}`.replace(/-/g, "");
-}
-
 function limparUrl(url: string) {
   return String(url || "").replace(/\/$/, "");
+}
+
+function limparTexto(texto: string) {
+  return String(texto || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+export function gerarInstanceName(clienteId: string, servicoSlug?: string) {
+  const clienteLimpo = String(clienteId || "").replace(/-/g, "");
+  const servicoLimpo = limparTexto(servicoSlug || "servico");
+
+  return `cliente_${clienteLimpo}_${servicoLimpo}`;
 }
 
 export async function listarInstanciasEvolution() {
@@ -85,7 +97,7 @@ export async function configurarWebhookEvolution(params: {
   const events =
     params.events && params.events.length > 0
       ? params.events
-      : ["MESSAGES_UPSERT"];
+      : ["MESSAGES_UPSERT", "CONNECTION_UPDATE"];
 
   const payload = {
     webhook: {
@@ -118,12 +130,16 @@ export async function configurarWebhookEvolution(params: {
 
 export async function configurarInstanciaCompleta(params: {
   clienteId: string;
+  servicoSlug: string;
   webhookUrl: string;
   events?: string[];
   webhookEnabled?: boolean;
   webhookBase64?: boolean;
 }) {
-  const instanceName = gerarInstanceName(params.clienteId);
+  const instanceName = gerarInstanceName(
+    params.clienteId,
+    params.servicoSlug
+  );
 
   const instancia = await criarInstanciaEvolution(instanceName);
 
