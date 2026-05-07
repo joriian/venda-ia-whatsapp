@@ -348,12 +348,13 @@ async function configurarEvolutionDoServico(clienteId: string, servico: any) {
   }
 
   const configuracao = await configurarInstanciaCompleta({
-    clienteId,
-    webhookUrl,
-    events: normalizarEventosEvolution(servico),
-    webhookEnabled: servico.evolution_webhook_enabled ?? true,
-    webhookBase64: servico.evolution_webhook_base64 ?? true,
-  });
+	clienteId,
+	servicoSlug: servico?.slug || "servico",
+	webhookUrl,
+	events: normalizarEventosEvolution(servico),
+	webhookEnabled: servico?.evolution_webhook_enabled,
+	webhookBase64: servico?.evolution_webhook_base64,
+});
 
   await supabase
     .from("cliente_servicos")
