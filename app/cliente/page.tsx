@@ -111,6 +111,53 @@ export default function ClientePage() {
     }
   }
 
+  async function controlarInstancia(
+    clienteServicoId: string,
+    acao: "status" | "qrcode" | "reiniciar" | "desconectar"
+  ) {
+    try {
+      const res = await fetch("/api/cliente/evolution", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          token,
+          cliente_servico_id: clienteServicoId,
+          acao,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        alert(data.detalhe || data.error || "Erro ao controlar instância.");
+        return;
+      }
+
+      await carregarDados();
+
+      if (acao === "status") {
+        alert("Status atualizado.");
+      }
+
+      if (acao === "qrcode") {
+        alert("QR Code solicitado. Aguarde alguns segundos e clique em Atualizar.");
+      }
+
+      if (acao === "reiniciar") {
+        alert("Instância reiniciada.");
+      }
+
+      if (acao === "desconectar") {
+        alert("WhatsApp desconectado.");
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Erro ao controlar instância.");
+    }
+  }
+
   async function alterarSenha() {
     if (!senhaAtual || !novaSenha || !confirmarSenha) {
       alert("Preencha todos os campos de senha.");
@@ -402,6 +449,7 @@ export default function ClientePage() {
                   statusPt={statusPt}
                   dataPt={dataPt}
                   dataHoraPt={dataHoraPt}
+                  controlarInstancia={controlarInstancia}
                 />
               ))}
 
@@ -682,7 +730,7 @@ function ServicoDetalheCard({ item, statusPt, dataPt }: any) {
   );
 }
 
-function WhatsAppServicoCard({ item, qrcodeSrc, statusPt, dataPt, dataHoraPt }: any) {
+function WhatsAppServicoCard({ item, qrcodeSrc, statusPt, dataPt, dataHoraPt, controlarInstancia }: any) {
   const evolution = item.evolution || {};
   const conectado = Boolean(evolution.conectado);
   const qr = evolution.qrcode || item.evolution_qrcode;
@@ -721,7 +769,7 @@ function WhatsAppServicoCard({ item, qrcodeSrc, statusPt, dataPt, dataHoraPt }: 
                 !
               </div>
               <p className="font-bold text-yellow-400">QR Code ainda não recebido</p>
-              <p className="text-gray-400 text-sm mt-1">Clique em atualizar ou aguarde a Evolution gerar o QR Code.</p>
+              <p className="text-gray-400 text-sm mt-1">Clique em Novo QR Code ou aguarde a Evolution gerar o QR Code.</p>
             </div>
           )}
         </div>
@@ -733,6 +781,40 @@ function WhatsAppServicoCard({ item, qrcodeSrc, statusPt, dataPt, dataHoraPt }: 
           <Info label="Nome conectado" value={evolution.nome || "-"} />
           <Info label="Vencimento" value={dataPt(item.data_expiracao)} />
           <Info label="Atualizado em" value={dataHoraPt(evolution.atualizado_em)} />
+
+          <div className="md:col-span-2 grid grid-cols-2 xl:grid-cols-4 gap-3 mt-2">
+            <button
+              onClick={() => controlarInstancia(item.id, "status")}
+              className="bg-blue-600 hover:bg-blue-700 py-3 rounded-2xl font-bold text-sm"
+            >
+              Atualizar
+            </button>
+
+            <button
+              onClick={() => controlarInstancia(item.id, "qrcode")}
+              className="bg-yellow-600 hover:bg-yellow-700 py-3 rounded-2xl font-bold text-sm"
+            >
+              Novo QR Code
+            </button>
+
+            <button
+              onClick={() => controlarInstancia(item.id, "reiniciar")}
+              className="bg-purple-600 hover:bg-purple-700 py-3 rounded-2xl font-bold text-sm"
+            >
+              Reiniciar
+            </button>
+
+            <button
+              onClick={() => {
+                if (confirm("Deseja realmente desconectar este WhatsApp?")) {
+                  controlarInstancia(item.id, "desconectar");
+                }
+              }}
+              className="bg-red-600 hover:bg-red-700 py-3 rounded-2xl font-bold text-sm"
+            >
+              Desconectar
+            </button>
+          </div>
 
           <div className="md:col-span-2 bg-zinc-800 border border-zinc-700 rounded-2xl p-4">
             <p className="text-gray-400 text-xs mb-1">Orientação</p>
