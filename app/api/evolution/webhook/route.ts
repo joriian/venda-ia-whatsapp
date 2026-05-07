@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import axios from "axios";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -7,13 +8,7 @@ const supabase = createClient(
 );
 
 function pegarEvento(body: any) {
-  return (
-    body?.event ||
-    body?.type ||
-    body?.data?.event ||
-    body?.body?.event ||
-    ""
-  );
+  return body?.event || body?.type || body?.data?.event || "";
 }
 
 function pegarInstanceName(body: any) {
@@ -77,6 +72,32 @@ async function buscarVinculo(instanceName: string) {
     .maybeSingle();
 
   return data;
+}
+
+async function encaminharParaN8n(webhookUrl: string | null, body: any, vinculo: any) {
+  if (!webhookUrl) return { enviado: false, motivo: "sem webhook_url" };
+
+  try {
+    await axios.post(webhookUrl, {
+      ...body,
+      sistema: {
+        cliente_id: vinculo?.cliente_id || null,
+        servico_id: vinculo?.servico_id || null,
+        cliente_servico_id: vinculo?.cliente_servico_id || null,
+        instance_name: vinculo?.instance_name || null,
+        workflow_id: vinculo?.workflow_id || null,
+        servico_nome: vinculo?.servico_nome || null,
+      },
+    });
+
+    return { enviado: true };
+  } catch (error: any) {
+    console.log("ERRO ENCAMINHAR N8N:", error.response?.data || error.message);
+    return {
+      enviado: false,
+      erro: error.response?.data || error.message,
+    };
+  }
 }
 
 export async function POST(req: Request) {
@@ -154,11 +175,23 @@ export async function POST(req: Request) {
         .eq("servico_id", servicoId);
     }
 
+    let n8n = { enviado: false, motivo: "evento não encaminhado" };
+
+    const eventoNormalizado = String(evento || "").toUpperCase();
+
+    if (
+      eventoNormalizado.includes("MESSAGES_UPSERT") ||
+      eventoNormalizado.includes("MESSAGE")
+    ) {
+      n8n = await encaminharParaN8n(vinculo?.webhook_url || null, body, vinculo);
+    }
+
     return NextResponse.json({
       ok: true,
       evento,
       instanceName,
       status,
+      n8n,
     });
   } catch (error: any) {
     console.log("ERRO WEBHOOK EVOLUTION:", error.message);
