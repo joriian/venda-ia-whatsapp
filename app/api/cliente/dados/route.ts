@@ -28,65 +28,60 @@ async function validarCliente(token: string) {
 async function buscarPlano(planoId: any) {
   if (!planoId) return null;
 
-  const planoTexto = String(planoId);
-
-  const { data: planoPorId } = await supabase
+  const { data } = await supabase
     .from("planos")
     .select("*")
-    .eq("id", planoTexto)
-    .maybeSingle();
-
-  if (planoPorId) return planoPorId;
-
-  return {
-    id: planoTexto,
-    nome: planoTexto,
-    valor: 0,
-    meses: 1,
-    ativo: true,
-  };
-}
-
-async function buscarServico(servicoId: any, plano: any) {
-  if (servicoId) {
-    const { data: servico } = await supabase
-      .from("servicos_ia")
-      .select("*")
-      .eq("id", servicoId)
-      .maybeSingle();
-
-    if (servico) return servico;
-  }
-
-  if (plano?.servico_id) {
-    const { data: servicoDoPlano } = await supabase
-      .from("servicos_ia")
-      .select("*")
-      .eq("id", plano.servico_id)
-      .maybeSingle();
-
-    if (servicoDoPlano) return servicoDoPlano;
-  }
-
-  const { data: primeiroServico } = await supabase
-    .from("servicos_ia")
-    .select("*")
-    .eq("ativo", true)
-    .limit(1)
+    .eq("id", String(planoId))
     .maybeSingle();
 
   return (
-    primeiroServico || {
-      id: "servico_principal",
-      nome: "Serviço principal",
-      descricao: "Serviço contratado",
+    data || {
+      id: String(planoId),
+      nome: String(planoId),
+      valor: 0,
+      meses: 1,
       ativo: true,
     }
   );
 }
 
-async function buscarStatusEvolution(clienteId: string) {
-  const instanceName = `cliente_${clienteId}`.replace(/-/g, "");
+async function buscarServico(servicoId: any, plano: any) {
+  if (servicoId) {
+    const { data } = await supabase
+      .from("servicos_ia")
+      .select("*")
+      .eq("id", servicoId)
+      .maybeSingle();
+
+    if (data) return data;
+  }
+
+  if (plano?.servico_id) {
+    const { data } = await supabase
+      .from("servicos_ia")
+      .select("*")
+      .eq("id", plano.servico_id)
+      .maybeSingle();
+
+    if (data) return data;
+  }
+
+  return {
+    id: "servico_principal",
+    nome: "Serviço principal",
+    descricao: "Serviço contratado",
+    ativo: true,
+  };
+}
+
+async function buscarStatusEvolution(instanceName: string) {
+  if (!instanceName) {
+    return {
+      instance_name: "",
+      status: "desconectado",
+      conectado: false,
+    };
+  }
 
   try {
     const response = await axios.get(
@@ -173,6 +168,30 @@ async function buscarPagamentos(cliente: any, servicosCliente: any[]) {
   }));
 }
 
+async function buscarQrCodePorInstancia(instanceName: string) {
+  if (!instanceName) return null;
+
+  const { data } = await supabase
+    .from("evolution_qrcodes")
+    .select("*")
+    .eq("instance_name", instanceName)
+    .maybeSingle();
+
+  return data || null;
+}
+
+async function buscarInstanciaSalva(instanceName: string) {
+  if (!instanceName) return null;
+
+  const { data } = await supabase
+    .from("instancias_evolution")
+    .select("*")
+    .eq("instance_name", instanceName)
+    .maybeSingle();
+
+  return data || null;
+}
+
 export async function POST(req: Request) {
   try {
     const { token } = await req.json();
@@ -187,8 +206,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Sessão inválida" }, { status: 401 });
     }
 
-    let servicosCliente: any[] = [];
-
     const { data: servicos } = await supabase
       .from("cliente_servicos")
       .select(`
@@ -199,7 +216,7 @@ export async function POST(req: Request) {
       .eq("cliente_id", cliente.id)
       .order("created_at", { ascending: false });
 
-    servicosCliente = servicos || [];
+    let servicosCliente: any[] = servicos || [];
 
     if (servicosCliente.length === 0) {
       const plano = await buscarPlano(cliente.plano_id);
@@ -215,13 +232,63 @@ export async function POST(req: Request) {
           data_inicio: cliente.data_inicio,
           data_expiracao: cliente.data_expiracao,
           created_at: cliente.criado_em || cliente.created_at || cliente.data_inicio,
+          instance_name: null,
+          evolution_status: "desconectado",
+          evolution_qrcode: null,
+          evolution_numero: null,
           servicos_ia: servico,
           planos: plano,
         },
       ];
     }
 
-    const pagamentos = await buscarPagamentos(cliente, servicosCliente);
+    const servicosComEvolution = await Promise.all(
+      servicosCliente.map(async (item: any) => {
+        const instanceName = item.instance_name;
+
+        const qrcodeSalvo = await buscarQrCodePorInstancia(instanceName);
+        const instanciaSalva = await buscarInstanciaSalva(instanceName);
+        const statusAtual = await buscarStatusEvolution(instanceName);
+
+        const statusFinal =
+          statusAtual?.status ||
+          qrcodeSalvo?.status ||
+          instanciaSalva?.status ||
+          item.evolution_status ||
+          "desconectado";
+
+        return {
+          ...item,
+          evolution: {
+            instance_name: instanceName,
+            status: statusFinal,
+            conectado:
+              statusFinal === "open" ||
+              statusFinal === "connected" ||
+              statusFinal === "conectado",
+            qrcode:
+              qrcodeSalvo?.qrcode ||
+              item.evolution_qrcode ||
+              null,
+            numero:
+              qrcodeSalvo?.numero ||
+              instanciaSalva?.numero ||
+              item.evolution_numero ||
+              null,
+            nome:
+              qrcodeSalvo?.nome ||
+              instanciaSalva?.nome ||
+              null,
+            atualizado_em:
+              qrcodeSalvo?.atualizado_em ||
+              instanciaSalva?.updated_at ||
+              null,
+          },
+        };
+      })
+    );
+
+    const pagamentos = await buscarPagamentos(cliente, servicosComEvolution);
 
     const { data: catalogoRaw } = await supabase
       .from("servicos_ia")
@@ -239,15 +306,12 @@ export async function POST(req: Request) {
       }),
     }));
 
-    const instancia = await buscarStatusEvolution(cliente.id);
-
     return NextResponse.json({
       ok: true,
       cliente,
-      servicosCliente,
+      servicosCliente: servicosComEvolution,
       pagamentos,
       catalogo,
-      instancia,
     });
   } catch (error: any) {
     console.log("ERRO CLIENTE DADOS:", error.message);
