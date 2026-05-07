@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import axios from "axios";
+import crypto from "crypto";
+import { gerarInstanceName } from "@/lib/evolution-config";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -25,7 +27,11 @@ async function validarCliente(token: string) {
   return data;
 }
 
-async function planoJaContratado(clienteId: string, servicoId: string, planoId: string) {
+async function buscarVinculoMesmoPlano(
+  clienteId: string,
+  servicoId: string,
+  planoId: string
+) {
   const agora = new Date().toISOString();
 
   const { data, error } = await supabase
@@ -34,16 +40,17 @@ async function planoJaContratado(clienteId: string, servicoId: string, planoId: 
     .eq("cliente_id", clienteId)
     .eq("servico_id", servicoId)
     .eq("plano_id", planoId)
-    .in("status", ["ativo", "aguardando_pagamento"])
-    .or(`data_expiracao.is.null,data_expiracao.gte.${agora}`)
+    .or(
+      `status.in.(ativo,aguardando_pagamento),checkout_expira_em.gte.${agora}`
+    )
     .limit(1);
 
   if (error) {
-    console.log("ERRO VERIFICAR PLANO DUPLICADO:", error.message);
-    return false;
+    console.log("ERRO BUSCAR VÍNCULO MESMO PLANO:", error.message);
+    return null;
   }
 
-  return (data || []).length > 0;
+  return data?.[0] || null;
 }
 
 async function validarCupom(codigo: string | null) {
@@ -89,6 +96,81 @@ function calcularValores(valor: number, cupom: any) {
     desconto_valor: desconto,
     valor_final: Number((valor - desconto).toFixed(2)),
   };
+}
+
+async function criarOuAtualizarVinculoPendente(params: {
+  cliente: any;
+  servico: any;
+  plano: any;
+}) {
+  const { cliente, servico, plano } = params;
+
+  const instanceName = gerarInstanceName(
+    cliente.id,
+    servico.slug || servico.nome || "servico"
+  );
+
+  const checkoutExpiraEm = new Date(
+    Date.now() + 30 * 60 * 1000
+  ).toISOString();
+
+  const { data: existente } = await supabase
+    .from("cliente_servicos")
+    .select("*")
+    .eq("cliente_id", cliente.id)
+    .eq("servico_id", servico.id)
+    .eq("plano_id", plano.id)
+    .limit(1);
+
+  if (existente && existente.length > 0) {
+    const vinculo = existente[0];
+
+    const { error } = await supabase
+      .from("cliente_servicos")
+      .update({
+        status: vinculo.status || "aguardando_pagamento",
+        checkout_expira_em: checkoutExpiraEm,
+        workflow_id: servico.workflow_id || null,
+        webhook_url: servico.webhook_url || null,
+        instance_name: instanceName,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", vinculo.id);
+
+    if (error) {
+      throw new Error(`Erro ao atualizar vínculo pendente: ${error.message}`);
+    }
+
+    return vinculo.id;
+  }
+
+  const { data: novo, error } = await supabase
+    .from("cliente_servicos")
+    .insert({
+      id: crypto.randomUUID(),
+      cliente_id: cliente.id,
+      servico_id: servico.id,
+      plano_id: plano.id,
+      status: "aguardando_pagamento",
+      data_inicio: null,
+      data_expiracao: null,
+      workflow_id: servico.workflow_id || null,
+      webhook_url: servico.webhook_url || null,
+      instance_name: instanceName,
+      evolution_status: "aguardando_pagamento",
+      evolution_configurado: false,
+      checkout_expira_em: checkoutExpiraEm,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    throw new Error(`Erro ao criar vínculo pendente: ${error.message}`);
+  }
+
+  return novo.id;
 }
 
 export async function POST(req: Request) {
@@ -146,17 +228,17 @@ export async function POST(req: Request) {
       );
     }
 
-    const jaTemMesmoPlano = await planoJaContratado(
+    const vinculoMesmoPlano = await buscarVinculoMesmoPlano(
       cliente.id,
       servico.id,
       plano.id
     );
 
-    if (jaTemMesmoPlano) {
+    if (vinculoMesmoPlano) {
       return NextResponse.json(
         {
           error:
-            "Você já possui este mesmo plano ativo ou aguardando pagamento. Escolha outro plano do serviço ou aguarde o vencimento.",
+            "Você já possui este mesmo plano ativo ou com pagamento em andamento. Escolha outro plano do serviço.",
         },
         { status: 409 }
       );
@@ -171,6 +253,12 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+
+    const clienteServicoId = await criarOuAtualizarVinculoPendente({
+      cliente,
+      servico,
+      plano,
+    });
 
     const appUrl =
       process.env.NEXT_PUBLIC_APP_URL ||
@@ -196,6 +284,7 @@ export async function POST(req: Request) {
 
       metadata: {
         cliente_id: cliente.id,
+        cliente_servico_id: clienteServicoId,
         servico_id: servico.id,
         plano_id: plano.id,
         meses: plano.meses,
@@ -243,6 +332,7 @@ export async function POST(req: Request) {
       init_point: response.data.init_point,
       sandbox_init_point: response.data.sandbox_init_point,
       preference_id: response.data.id,
+      cliente_servico_id: clienteServicoId,
       valores,
     });
   } catch (error: any) {
