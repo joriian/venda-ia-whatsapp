@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import crypto from "crypto";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -29,16 +30,29 @@ async function validarAdmin(req: Request) {
   return admin;
 }
 
-function podeGerenciarCatalogo(nivel: string) {
-  return nivel === "dono" || nivel === "admin";
+function normalizarEventos(eventos: any) {
+  if (Array.isArray(eventos)) {
+    return eventos.map((e) => String(e).trim().toUpperCase()).filter(Boolean);
+  }
+
+  if (typeof eventos === "string") {
+    return eventos
+      .split(",")
+      .map((e) => e.trim().toUpperCase())
+      .filter(Boolean);
+  }
+
+  return ["MESSAGES_UPSERT", "CONNECTION_UPDATE"];
 }
 
-function limparSlug(valor: string) {
-  return String(valor || "")
-    .trim()
+function slugify(texto: string) {
+  return String(texto || "")
     .toLowerCase()
-    .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9-]/g, "");
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
 }
 
 export async function GET(req: Request) {
@@ -51,38 +65,59 @@ export async function GET(req: Request) {
 
     const { data: servicos, error: servicosError } = await supabase
       .from("servicos_ia")
-      .select("*, planos(*)")
+      .select(`
+        *,
+        planos (*)
+      `)
       .order("ordem", { ascending: true });
 
     if (servicosError) {
-      console.log("ERRO BUSCAR SERVICOS:", servicosError);
       return NextResponse.json(
-        { error: "Erro ao buscar serviços" },
+        {
+          error: "Erro ao buscar serviços",
+          detalhe: servicosError.message,
+        },
         { status: 500 }
       );
     }
 
-    const { data: termos } = await supabase
-      .from("termos_uso_config")
-      .select("*")
-      .eq("id", 1)
-      .maybeSingle();
-
-    const servicosFormatados = (servicos || []).map((servico: any) => ({
+    const servicosOrdenados = (servicos || []).map((servico: any) => ({
       ...servico,
       planos: (servico.planos || []).sort((a: any, b: any) => {
         return Number(a.ordem || 0) - Number(b.ordem || 0);
       }),
     }));
 
+    let termos = null;
+
+    try {
+      const { data } = await supabase
+        .from("termos_uso")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      termos = data;
+    } catch {
+      termos = null;
+    }
+
     return NextResponse.json({
       ok: true,
-      servicos: servicosFormatados,
+      servicos: servicosOrdenados,
       termos,
     });
   } catch (error: any) {
-    console.log("ERRO CATALOGO GET:", error.message);
-    return NextResponse.json({ error: true }, { status: 500 });
+    console.log("ERRO GET CATALOGO:", error.message);
+
+    return NextResponse.json(
+      {
+        error: "Erro interno",
+        detalhe: error.message,
+      },
+      { status: 500 }
+    );
   }
 }
 
@@ -94,199 +129,290 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
     }
 
-    if (!podeGerenciarCatalogo(admin.nivel)) {
-      return NextResponse.json(
-        { error: "Sem permissão para gerenciar catálogo" },
-        { status: 403 }
-      );
-    }
-
     const body = await req.json();
     const acao = body.acao;
 
     if (acao === "criar_servico") {
       const nome = String(body.nome || "").trim();
-      const slug = limparSlug(body.slug || nome);
-      const descricao = String(body.descricao || "").trim();
 
-      if (!nome || !slug) {
+      if (!nome) {
         return NextResponse.json(
-          { error: "Nome e slug são obrigatórios" },
+          { error: "Nome do serviço é obrigatório" },
           { status: 400 }
         );
       }
 
-      const { error } = await supabase.from("servicos_ia").insert({
+      const slug = body.slug ? slugify(body.slug) : slugify(nome);
+
+      const payload = {
+        id: body.id || crypto.randomUUID(),
         nome,
         slug,
-        descricao,
-        ativo: true,
+        descricao: body.descricao || "",
+        ativo: body.ativo ?? true,
         ordem: Number(body.ordem || 0),
-      });
+
+        workflow_id: body.workflow_id || null,
+        webhook_url: body.webhook_url || null,
+        workflow_tipo: body.workflow_tipo || "whatsapp",
+
+        evolution_events: normalizarEventos(body.evolution_events),
+        evolution_webhook_enabled: body.evolution_webhook_enabled ?? true,
+        evolution_webhook_base64: body.evolution_webhook_base64 ?? true,
+      };
+
+      const { data, error } = await supabase
+        .from("servicos_ia")
+        .insert(payload)
+        .select("*")
+        .single();
 
       if (error) {
-        console.log("ERRO CRIAR SERVICO:", error);
         return NextResponse.json(
-          { error: "Erro ao criar serviço", detalhe: error.message },
+          {
+            error: "Erro ao criar serviço",
+            detalhe: error.message,
+          },
           { status: 500 }
         );
       }
 
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({
+        ok: true,
+        servico: data,
+      });
     }
 
     if (acao === "atualizar_servico") {
-      const id = body.id;
-      const nome = String(body.nome || "").trim();
-      const slug = limparSlug(body.slug || nome);
-      const descricao = String(body.descricao || "").trim();
-      const ativo = Boolean(body.ativo);
-      const ordem = Number(body.ordem || 0);
-
-      if (!id || !nome || !slug) {
+      if (!body.id) {
         return NextResponse.json(
-          { error: "ID, nome e slug são obrigatórios" },
+          { error: "ID do serviço é obrigatório" },
           { status: 400 }
         );
       }
 
-      const { error } = await supabase
+      const nome = String(body.nome || "").trim();
+
+      if (!nome) {
+        return NextResponse.json(
+          { error: "Nome do serviço é obrigatório" },
+          { status: 400 }
+        );
+      }
+
+      const payload = {
+        nome,
+        slug: body.slug ? slugify(body.slug) : slugify(nome),
+        descricao: body.descricao || "",
+        ativo: body.ativo ?? true,
+        ordem: Number(body.ordem || 0),
+
+        workflow_id: body.workflow_id || null,
+        webhook_url: body.webhook_url || null,
+        workflow_tipo: body.workflow_tipo || "whatsapp",
+
+        evolution_events: normalizarEventos(body.evolution_events),
+        evolution_webhook_enabled: body.evolution_webhook_enabled ?? true,
+        evolution_webhook_base64: body.evolution_webhook_base64 ?? true,
+      };
+
+      const { data, error } = await supabase
         .from("servicos_ia")
-        .update({
-          nome,
-          slug,
-          descricao,
-          ativo,
-          ordem,
-        })
-        .eq("id", id);
+        .update(payload)
+        .eq("id", body.id)
+        .select("*")
+        .single();
 
       if (error) {
-        console.log("ERRO ATUALIZAR SERVICO:", error);
         return NextResponse.json(
-          { error: "Erro ao atualizar serviço", detalhe: error.message },
+          {
+            error: "Erro ao atualizar serviço",
+            detalhe: error.message,
+          },
           { status: 500 }
         );
       }
 
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({
+        ok: true,
+        servico: data,
+      });
     }
 
     if (acao === "criar_plano") {
-      const servico_id = body.servico_id;
-      const nome = String(body.nome || "").trim();
-      const descricao = String(body.descricao || "").trim();
-      const valor = Number(String(body.valor || "0").replace(",", "."));
-      const meses = Number(body.meses || 1);
-      const destaque = Boolean(body.destaque);
-      const ordem = Number(body.ordem || 0);
-
-      if (!servico_id || !nome || !valor || !meses) {
+      if (!body.servico_id) {
         return NextResponse.json(
-          { error: "Serviço, nome, valor e meses são obrigatórios" },
+          { error: "Serviço do plano é obrigatório" },
           { status: 400 }
         );
       }
 
-      const { error } = await supabase.from("planos").insert({
+      const nome = String(body.nome || "").trim();
+
+      if (!nome) {
+        return NextResponse.json(
+          { error: "Nome do plano é obrigatório" },
+          { status: 400 }
+        );
+      }
+
+      const payload = {
+        id: body.id || crypto.randomUUID(),
+        servico_id: body.servico_id,
         nome,
-        meses,
-        valor,
-        ativo: true,
-        servico_id,
-        descricao,
-        destaque,
-        ordem,
-      });
+        descricao: body.descricao || "",
+        valor: Number(String(body.valor || "0").replace(",", ".")),
+        meses: Number(body.meses || 1),
+        ativo: body.ativo ?? true,
+        destaque: body.destaque ?? false,
+        ordem: Number(body.ordem || 0),
+      };
+
+      const { data, error } = await supabase
+        .from("planos")
+        .insert(payload)
+        .select("*")
+        .single();
 
       if (error) {
-        console.log("ERRO CRIAR PLANO:", error);
         return NextResponse.json(
-          { error: "Erro ao criar plano", detalhe: error.message },
+          {
+            error: "Erro ao criar plano",
+            detalhe: error.message,
+          },
           { status: 500 }
         );
       }
 
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({
+        ok: true,
+        plano: data,
+      });
     }
 
     if (acao === "atualizar_plano") {
-      const id = body.id;
-      const nome = String(body.nome || "").trim();
-      const descricao = String(body.descricao || "").trim();
-      const valor = Number(String(body.valor || "0").replace(",", "."));
-      const meses = Number(body.meses || 1);
-      const ativo = Boolean(body.ativo);
-      const destaque = Boolean(body.destaque);
-      const ordem = Number(body.ordem || 0);
-
-      if (!id || !nome || !valor || !meses) {
+      if (!body.id) {
         return NextResponse.json(
-          { error: "ID, nome, valor e meses são obrigatórios" },
+          { error: "ID do plano é obrigatório" },
           { status: 400 }
         );
       }
 
-      const { error } = await supabase
+      const nome = String(body.nome || "").trim();
+
+      if (!nome) {
+        return NextResponse.json(
+          { error: "Nome do plano é obrigatório" },
+          { status: 400 }
+        );
+      }
+
+      const payload = {
+        servico_id: body.servico_id,
+        nome,
+        descricao: body.descricao || "",
+        valor: Number(String(body.valor || "0").replace(",", ".")),
+        meses: Number(body.meses || 1),
+        ativo: body.ativo ?? true,
+        destaque: body.destaque ?? false,
+        ordem: Number(body.ordem || 0),
+      };
+
+      const { data, error } = await supabase
         .from("planos")
-        .update({
-          nome,
-          descricao,
-          valor,
-          meses,
-          ativo,
-          destaque,
-          ordem,
-        })
-        .eq("id", id);
+        .update(payload)
+        .eq("id", body.id)
+        .select("*")
+        .single();
 
       if (error) {
-        console.log("ERRO ATUALIZAR PLANO:", error);
         return NextResponse.json(
-          { error: "Erro ao atualizar plano", detalhe: error.message },
+          {
+            error: "Erro ao atualizar plano",
+            detalhe: error.message,
+          },
           { status: 500 }
         );
       }
 
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({
+        ok: true,
+        plano: data,
+      });
     }
 
     if (acao === "atualizar_termos") {
-      const titulo = String(body.titulo || "").trim();
-      const conteudo = String(body.conteudo || "").trim();
-      const ativo = Boolean(body.ativo);
+      const payload = {
+        titulo: body.titulo || "Termos de uso",
+        conteudo: body.conteudo || "",
+        ativo: body.ativo ?? true,
+        updated_at: new Date().toISOString(),
+      };
 
-      if (!titulo || !conteudo) {
-        return NextResponse.json(
-          { error: "Título e conteúdo são obrigatórios" },
-          { status: 400 }
-        );
+      if (body.id) {
+        const { data, error } = await supabase
+          .from("termos_uso")
+          .update(payload)
+          .eq("id", body.id)
+          .select("*")
+          .single();
+
+        if (error) {
+          return NextResponse.json(
+            {
+              error: "Erro ao atualizar termos",
+              detalhe: error.message,
+            },
+            { status: 500 }
+          );
+        }
+
+        return NextResponse.json({
+          ok: true,
+          termos: data,
+        });
       }
 
-      const { error } = await supabase.from("termos_uso_config").upsert({
-        id: 1,
-        titulo,
-        conteudo,
-        ativo,
-        updated_at: new Date().toISOString(),
-      });
+      const { data, error } = await supabase
+        .from("termos_uso")
+        .insert({
+          id: crypto.randomUUID(),
+          ...payload,
+          created_at: new Date().toISOString(),
+        })
+        .select("*")
+        .single();
 
       if (error) {
-        console.log("ERRO ATUALIZAR TERMOS:", error);
         return NextResponse.json(
-          { error: "Erro ao atualizar termos", detalhe: error.message },
+          {
+            error: "Erro ao criar termos",
+            detalhe: error.message,
+          },
           { status: 500 }
         );
       }
 
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({
+        ok: true,
+        termos: data,
+      });
     }
 
-    return NextResponse.json({ error: "Ação inválida" }, { status: 400 });
-  } catch (error: any) {
-    console.log("ERRO CATALOGO POST:", error.message);
     return NextResponse.json(
-      { error: true, detalhe: error.message },
+      {
+        error: "Ação inválida",
+      },
+      { status: 400 }
+    );
+  } catch (error: any) {
+    console.log("ERRO POST CATALOGO:", error.message);
+
+    return NextResponse.json(
+      {
+        error: "Erro interno",
+        detalhe: error.message,
+      },
       { status: 500 }
     );
   }
