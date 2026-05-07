@@ -268,8 +268,7 @@ export default function AdminPage() {
     }
 
     if (acao === "gerar_link" && data.link) {
-      alert("Link de pagamento:
-" + data.link);
+      alert(`Link de pagamento:\n${data.link}`);
     } else {
       alert("Ação realizada com sucesso");
     }
