@@ -333,23 +333,33 @@ export default function ClientePage() {
     }
   }
 
-  function limparSessaoLocal() {
-    localStorage.removeItem("clienteToken");
-    localStorage.removeItem("clienteId");
-    localStorage.removeItem("clienteNome");
-    localStorage.removeItem("clienteEmail");
-    localStorage.removeItem("clienteAcessoAdmin");
-  }
+ function limparSessaoLocal() {
+  localStorage.removeItem("clienteToken");
+  localStorage.removeItem("clienteId");
+  localStorage.removeItem("clienteNome");
+  localStorage.removeItem("clienteEmail");
+  localStorage.removeItem("clienteAcessoAdmin");
 
-  function sair() {
-    limparSessaoLocal();
-    window.location.href = "/login";
-  }
+  sessionStorage.clear();
 
-  function irLogin() {
-    limparSessaoLocal();
-    window.location.href = "/login";
-  }
+  document.cookie =
+    "clienteToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+
+  document.cookie =
+    "adminToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+}
+
+function sair() {
+  limparSessaoLocal();
+
+  window.location.href = "/login";
+}
+
+function irLogin() {
+  limparSessaoLocal();
+
+  window.location.href = "/login";
+}
 
   function dinheiro(valor: number) {
     return Number(valor || 0).toLocaleString("pt-BR", {
