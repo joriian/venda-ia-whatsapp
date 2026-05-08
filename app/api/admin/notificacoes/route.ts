@@ -29,6 +29,30 @@ async function validarAdmin(req: Request) {
   return admin;
 }
 
+async function anexarClientes(notificacoes: any[]) {
+  return Promise.all(
+    (notificacoes || []).map(async (n: any) => {
+      if (!n.cliente_id) {
+        return {
+          ...n,
+          clientes_ia_whatsapp: null,
+        };
+      }
+
+      const { data: cliente } = await supabase
+        .from("clientes_ia_whatsapp")
+        .select("nome,email,telefone")
+        .eq("id", n.cliente_id)
+        .maybeSingle();
+
+      return {
+        ...n,
+        clientes_ia_whatsapp: cliente || null,
+      };
+    })
+  );
+}
+
 export async function GET(req: Request) {
   try {
     const admin = await validarAdmin(req);
@@ -45,14 +69,7 @@ export async function GET(req: Request) {
 
     let query = supabase
       .from("notificacoes_sistema")
-      .select(`
-        *,
-        clientes_ia_whatsapp (
-          nome,
-          email,
-          telefone
-        )
-      `)
+      .select("*")
       .order("created_at", { ascending: false })
       .limit(150);
 
@@ -86,9 +103,11 @@ export async function GET(req: Request) {
       );
     }
 
+    const notificacoes = await anexarClientes(data || []);
+
     return NextResponse.json({
       ok: true,
-      notificacoes: data || [],
+      notificacoes,
     });
   } catch (error: any) {
     return NextResponse.json(
