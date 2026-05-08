@@ -63,6 +63,10 @@ export async function GET(req: Request) {
   resultados.push(
     await chamarRota(`/api/cron/verificar-vencimentos?secret=${CRON_SECRET}`)
   );
+  
+  resultados.push(
+	await chamarRota(`/api/cron/verificar-instancias`)
+  );
 
   return NextResponse.json({
     ok: true,
