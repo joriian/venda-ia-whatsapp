@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import AdminCatalogo from "@/components/admin/AdminCatalogo";
 import AdminLogs from "@/components/admin/AdminLogs";
+import AdminSaudeAutomacoes from "@/components/admin/AdminSaudeAutomacoes";
 
 type AnyObj = any;
 
@@ -861,6 +862,7 @@ export default function AdminPage() {
         <Aba ativa={aba === "clientes"} onClick={() => setAba("clientes")}>Clientes</Aba>
         <Aba ativa={aba === "instancias"} onClick={() => setAba("instancias")}>Instâncias</Aba>
         <Aba ativa={aba === "logs"} onClick={() => setAba("logs")}>Logs</Aba>
+        <Aba ativa={aba === "saude"} onClick={() => setAba("saude")}>Saúde</Aba>
         {ehDono() && <Aba ativa={aba === "usuarios"} onClick={() => setAba("usuarios")}>Usuários admin</Aba>}
         {ehDono() && <Aba ativa={aba === "permissoes"} onClick={() => setAba("permissoes")}>Permissões</Aba>}
       </nav>
@@ -1022,6 +1024,10 @@ export default function AdminPage() {
 
       {aba === "logs" && (
         <AdminLogs adminToken={adminToken} />
+      )}
+
+      {aba === "saude" && (
+        <AdminSaudeAutomacoes adminToken={adminToken} />
       )}
 
       {aba === "usuarios" && ehDono() && (
