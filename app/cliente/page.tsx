@@ -27,6 +27,16 @@ export default function ClientePage() {
   const [filtroLog, setFiltroLog] = useState("todos");
   const [carregandoLogs, setCarregandoLogs] = useState(false);
 
+  const [telefoneVerificacao, setTelefoneVerificacao] = useState("");
+  const [codigoVerificacao, setCodigoVerificacao] = useState("");
+  const [enviandoCodigo, setEnviandoCodigo] = useState(false);
+  const [verificandoCodigo, setVerificandoCodigo] = useState(false);
+
+  const [logsIa, setLogsIa] = useState<AnyObj[]>([]);
+  const [buscaLog, setBuscaLog] = useState("");
+  const [filtroLog, setFiltroLog] = useState("todos");
+  const [carregandoLogs, setCarregandoLogs] = useState(false);
+
   useEffect(() => {
     iniciarSessao();
   }, []);
@@ -75,6 +85,9 @@ export default function ClientePage() {
 
       setErroSessao("");
       setDados(data);
+      if (data?.cliente?.telefone) {
+        setTelefoneVerificacao(data.cliente.telefone);
+      }
     } catch (error) {
       console.error(error);
       setErroSessao("Erro ao carregar dados do cliente.");
@@ -84,6 +97,12 @@ export default function ClientePage() {
   }
 
   async function contratar(servicoId: string, planoId: string) {
+    if (!cliente?.telefone_verificado) {
+      alert("Antes de contratar, verifique seu número de WhatsApp na aba Minha conta.");
+      setAba("conta");
+      return;
+    }
+
     setPagando(planoId);
 
     try {
@@ -200,6 +219,76 @@ export default function ClientePage() {
       carregarLogsIa();
     }
   }, [aba, filtroLog, token]);
+
+  async function enviarCodigoVerificacao() {
+    setEnviandoCodigo(true);
+
+    try {
+      const res = await fetch("/api/cliente/enviar-codigo", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          token,
+          telefone: telefoneVerificacao || cliente?.telefone,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        alert(data.detalhe || data.error || "Erro ao enviar código.");
+        return;
+      }
+
+      alert("Código enviado pelo WhatsApp.");
+      await carregarDados();
+    } catch (error) {
+      console.error(error);
+      alert("Erro ao enviar código.");
+    } finally {
+      setEnviandoCodigo(false);
+    }
+  }
+
+  async function confirmarCodigoVerificacao() {
+    if (!codigoVerificacao.trim()) {
+      alert("Digite o código recebido no WhatsApp.");
+      return;
+    }
+
+    setVerificandoCodigo(true);
+
+    try {
+      const res = await fetch("/api/cliente/verificar-codigo", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          token,
+          codigo: codigoVerificacao,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        alert(data.detalhe || data.error || "Erro ao verificar código.");
+        return;
+      }
+
+      setCodigoVerificacao("");
+      alert("Telefone verificado com sucesso.");
+      await carregarDados();
+    } catch (error) {
+      console.error(error);
+      alert("Erro ao verificar código.");
+    } finally {
+      setVerificandoCodigo(false);
+    }
+  }
 
   async function alterarSenha() {
     if (!senhaAtual || !novaSenha || !confirmarSenha) {
@@ -428,11 +517,16 @@ export default function ClientePage() {
 
         {aba === "resumo" && (
           <section className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <Card titulo="Serviços ativos" valor={servicosAtivos.length} texto="Contratações liberadas" />
               <Card titulo="Total de serviços" valor={servicosCliente.length} texto="Serviços na conta" />
               <Card titulo="WhatsApps conectados" valor={servicosConectados.length} texto="Instâncias online" />
               <Card titulo="Pagamentos" valor={pagamentos.length} texto="Histórico geral" />
+              <Card
+                titulo="WhatsApp verificado"
+                valor={cliente?.telefone_verificado ? "Sim" : "Não"}
+                texto={cliente?.telefone_verificado ? "Cliente liberado para compras" : "Verificação pendente"}
+              />
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -594,6 +688,20 @@ export default function ClientePage() {
 
         {aba === "planos" && (
           <section className="space-y-6">
+            {!cliente?.telefone_verificado && (
+              <div className="bg-yellow-900/30 border border-yellow-700 rounded-3xl p-5">
+                <h2 className="text-xl font-bold text-yellow-400">Verifique seu WhatsApp antes de contratar</h2>
+                <p className="text-gray-300 text-sm mt-2">
+                  Para sua segurança, você precisa confirmar o número cadastrado antes de comprar ou renovar um plano.
+                </p>
+                <button
+                  onClick={() => setAba("conta")}
+                  className="mt-4 bg-yellow-600 hover:bg-yellow-700 px-5 py-3 rounded-2xl font-bold"
+                >
+                  Verificar agora
+                </button>
+              </div>
+            )}
             <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
               <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
                 <div>
@@ -647,10 +755,14 @@ export default function ClientePage() {
 
                           <button
                             onClick={() => contratar(servico.id, plano.id)}
-                            disabled={pagando === plano.id}
+                            disabled={pagando === plano.id || !cliente?.telefone_verificado}
                             className="mt-4 w-full bg-green-600 hover:bg-green-700 disabled:bg-zinc-600 py-3 rounded-2xl font-bold"
                           >
-                            {pagando === plano.id ? "Gerando pagamento..." : "Contratar"}
+                            {!cliente?.telefone_verificado
+                              ? "Verifique o WhatsApp"
+                              : pagando === plano.id
+                              ? "Gerando pagamento..."
+                              : "Contratar"}
                           </button>
                         </div>
                       ))}
@@ -666,6 +778,63 @@ export default function ClientePage() {
         {aba === "conta" && (
           <section className="grid gap-6">
             <PainelConta cliente={cliente} statusPt={statusPt} grande />
+
+            <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
+              <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 mb-5">
+                <div>
+                  <h2 className="text-2xl font-bold">Verificação do WhatsApp</h2>
+                  <p className="text-gray-400 text-sm mt-1">
+                    Confirme seu número para liberar compras, renovações e notificações importantes.
+                  </p>
+                </div>
+
+                <StatusBadge status={cliente?.telefone_verificado ? "Conectado" : "Pendente"} />
+              </div>
+
+              {cliente?.telefone_verificado ? (
+                <div className="bg-green-900/30 border border-green-700 rounded-2xl p-4">
+                  <p className="font-bold text-green-400">WhatsApp verificado</p>
+                  <p className="text-gray-300 text-sm mt-1">
+                    Número confirmado: {cliente?.telefone || "-"}
+                  </p>
+                  <p className="text-gray-400 text-xs mt-1">
+                    Verificado em: {dataHoraPt(cliente?.telefone_verificado_em)}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 xl:grid-cols-[1fr_180px_1fr_180px] gap-3">
+                  <input
+                    value={telefoneVerificacao}
+                    onChange={(e) => setTelefoneVerificacao(e.target.value)}
+                    placeholder="Telefone com DDD"
+                    className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700"
+                  />
+
+                  <button
+                    onClick={enviarCodigoVerificacao}
+                    disabled={enviandoCodigo}
+                    className="bg-green-600 hover:bg-green-700 disabled:bg-zinc-600 rounded-2xl font-bold py-3"
+                  >
+                    {enviandoCodigo ? "Enviando..." : "Enviar código"}
+                  </button>
+
+                  <input
+                    value={codigoVerificacao}
+                    onChange={(e) => setCodigoVerificacao(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="Código recebido"
+                    className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700"
+                  />
+
+                  <button
+                    onClick={confirmarCodigoVerificacao}
+                    disabled={verificandoCodigo}
+                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-600 rounded-2xl font-bold py-3"
+                  >
+                    {verificandoCodigo ? "Validando..." : "Confirmar"}
+                  </button>
+                </div>
+              )}
+            </div>
 
             <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
               <h2 className="text-2xl font-bold mb-2">Alterar senha</h2>
