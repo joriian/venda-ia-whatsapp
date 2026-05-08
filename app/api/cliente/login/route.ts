@@ -106,9 +106,8 @@ export async function POST(req: Request) {
       cliente.senha ||
       "";
 
-    const senhaValida =
-      senhaBanco === senhaHash ||
-      senhaBanco === senha;
+const senhaValida =
+  senhaBanco === senhaHash;
 
     if (!senhaValida) {
       return NextResponse.json(
