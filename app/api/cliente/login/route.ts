@@ -1,82 +1,191 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
+import jwt from "jsonwebtoken";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-function criarToken() {
-  return crypto.randomBytes(32).toString("hex");
+const JWT_SECRET =
+  process.env.JWT_SECRET ||
+  "NEXORA_SECRET_2026";
+
+function hashSenha(senha: string) {
+  return crypto
+    .createHash("sha256")
+    .update(senha)
+    .digest("hex");
+}
+
+function gerarJWT(cliente: any) {
+  return jwt.sign(
+    {
+      id: cliente.id,
+      nome: cliente.nome,
+      email: cliente.email,
+      telefone: cliente.telefone,
+      status: cliente.status,
+      tipo: "cliente",
+    },
+    JWT_SECRET,
+    {
+      expiresIn: "12h",
+    }
+  );
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const email = String(body.email || "").trim().toLowerCase();
-    const senha = String(body.senha || "").trim();
+    const email = String(
+      body.email || ""
+    )
+      .trim()
+      .toLowerCase();
+
+    const senha = String(
+      body.senha || ""
+    ).trim();
 
     if (!email || !senha) {
       return NextResponse.json(
-        { error: "Email e senha são obrigatórios" },
-        { status: 400 }
+        {
+          error:
+            "Email e senha são obrigatórios",
+        },
+        {
+          status: 400,
+        }
       );
     }
 
-    const { data: clientes, error } = await supabase
-      .from("clientes_ia_whatsapp")
-      .select("*")
-      .ilike("email", email);
+    const { data: cliente, error } =
+      await supabase
+        .from("clientes_ia_whatsapp")
+        .select("*")
+        .eq("email", email)
+        .maybeSingle();
 
     if (error) {
-      console.log("ERRO BUSCAR CLIENTE:", error);
+      console.log(
+        "ERRO BUSCAR CLIENTE:",
+        error
+      );
+
       return NextResponse.json(
-        { error: "Erro ao buscar cliente" },
-        { status: 500 }
+        {
+          error:
+            "Erro ao buscar cliente",
+        },
+        {
+          status: 500,
+        }
       );
     }
-
-    const cliente = clientes?.find((c) => {
-      return String(c.senha || "").trim() === senha;
-    });
 
     if (!cliente) {
       return NextResponse.json(
-        { error: "Email ou senha incorretos" },
-        { status: 401 }
+        {
+          error:
+            "Email ou senha incorretos",
+        },
+        {
+          status: 401,
+        }
       );
     }
 
-    const token = criarToken();
+    const senhaHash =
+      hashSenha(senha);
+
+    const senhaBanco =
+      cliente.senha_hash ||
+      cliente.senha ||
+      "";
+
+    const senhaValida =
+      senhaBanco === senhaHash ||
+      senhaBanco === senha;
+
+    if (!senhaValida) {
+      return NextResponse.json(
+        {
+          error:
+            "Email ou senha incorretos",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    const token =
+      gerarJWT(cliente);
 
     const expires = new Date();
-    expires.setHours(expires.getHours() + 12);
+
+    expires.setHours(
+      expires.getHours() + 12
+    );
 
     await supabase
-      .from("clientes_ia_whatsapp")
+      .from(
+        "clientes_ia_whatsapp"
+      )
       .update({
         session_token: token,
-        session_expires_at: expires.toISOString(),
+        session_expires_at:
+          expires.toISOString(),
       })
       .eq("id", cliente.id);
 
-    return NextResponse.json({
-      ok: true,
+    const response =
+      NextResponse.json({
+        ok: true,
+        token,
+        cliente: {
+          id: cliente.id,
+          nome: cliente.nome,
+          email: cliente.email,
+          telefone:
+            cliente.telefone,
+          status:
+            cliente.status,
+        },
+        expiresAt:
+          expires.toISOString(),
+      });
+
+    response.cookies.set(
+      "clienteToken",
       token,
-      clienteId: cliente.id,
-      nome: cliente.nome,
-      email: cliente.email,
-      status: cliente.status,
-      expiresAt: expires.toISOString(),
-    });
+      {
+        httpOnly: false,
+        secure: true,
+        sameSite: "lax",
+        path: "/",
+        expires,
+      }
+    );
+
+    return response;
   } catch (error: any) {
-    console.log("ERRO LOGIN CLIENTE:", error.message);
+    console.log(
+      "ERRO LOGIN CLIENTE:",
+      error.message
+    );
 
     return NextResponse.json(
-      { error: "Erro ao fazer login" },
-      { status: 500 }
+      {
+        error:
+          "Erro ao fazer login",
+      },
+      {
+        status: 500,
+      }
     );
   }
 }

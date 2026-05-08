@@ -1,69 +1,133 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import jwt from "jsonwebtoken";
 
-const ROTAS_PROTEGIDAS = [
+const JWT_SECRET =
+  process.env.JWT_SECRET ||
+  "NEXORA_SECRET_2026";
+
+const ROTAS_CLIENTE = [
   "/cliente",
+];
+
+const ROTAS_ADMIN = [
   "/admin",
 ];
 
-const ROTAS_PUBLICAS = [
-  "/login",
-  "/",
-];
+function validarJWT(token: string) {
+  try {
+    return jwt.verify(
+      token,
+      JWT_SECRET
+    );
+  } catch {
+    return null;
+  }
+}
 
-export function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
+export function middleware(
+  req: NextRequest
+) {
+  const { pathname } =
+    req.nextUrl;
 
-  const token =
-    req.cookies.get("clienteToken")?.value ||
-    req.headers.get("x-cliente-token") ||
-    "";
+  const clienteToken =
+    req.cookies.get(
+      "clienteToken"
+    )?.value || "";
 
   const adminToken =
-    req.cookies.get("adminToken")?.value ||
-    "";
+    req.cookies.get(
+      "adminToken"
+    )?.value || "";
 
-  const rotaCliente = ROTAS_PROTEGIDAS.some(
-    (rota) => pathname.startsWith(rota)
-  );
-
-  const rotaPublica = ROTAS_PUBLICAS.some(
-    (rota) =>
-      pathname === rota ||
-      pathname.startsWith(rota)
-  );
-
-  if (
-    pathname.startsWith("/admin") &&
-    !adminToken
-  ) {
-    return NextResponse.redirect(
-      new URL("/admin/login", req.url)
+  const rotaCliente =
+    ROTAS_CLIENTE.some((r) =>
+      pathname.startsWith(r)
     );
-  }
 
-  if (rotaCliente && !token) {
-    return NextResponse.redirect(
-      new URL("/login", req.url)
+  const rotaAdmin =
+    ROTAS_ADMIN.some((r) =>
+      pathname.startsWith(r)
     );
+
+  if (rotaCliente) {
+    if (!clienteToken) {
+      return NextResponse.redirect(
+        new URL(
+          "/login",
+          req.url
+        )
+      );
+    }
+
+    const jwtValido =
+      validarJWT(clienteToken);
+
+    if (!jwtValido) {
+      const response =
+        NextResponse.redirect(
+          new URL(
+            "/login",
+            req.url
+          )
+        );
+
+      response.cookies.delete(
+        "clienteToken"
+      );
+
+      return response;
+    }
   }
 
   if (
     pathname === "/login" &&
-    token
+    clienteToken
   ) {
-    return NextResponse.redirect(
-      new URL("/cliente", req.url)
-    );
+    const jwtValido =
+      validarJWT(clienteToken);
+
+    if (jwtValido) {
+      return NextResponse.redirect(
+        new URL(
+          "/cliente",
+          req.url
+        )
+      );
+    }
   }
 
   if (
     pathname === "/" &&
-    token
+    clienteToken
   ) {
-    return NextResponse.redirect(
-      new URL("/cliente", req.url)
-    );
+    const jwtValido =
+      validarJWT(clienteToken);
+
+    if (jwtValido) {
+      return NextResponse.redirect(
+        new URL(
+          "/cliente",
+          req.url
+        )
+      );
+    }
+  }
+
+  if (
+    rotaAdmin &&
+    pathname !==
+      "/admin/login"
+  ) {
+    if (!adminToken) {
+      return NextResponse.redirect(
+        new URL(
+          "/admin/login",
+          req.url
+        )
+      );
+    }
   }
 
   return NextResponse.next();
@@ -72,7 +136,7 @@ export function middleware(req: NextRequest) {
 export const config = {
   matcher: [
     "/",
-    "/login/:path*",
+    "/login",
     "/cliente/:path*",
     "/admin/:path*",
   ],
