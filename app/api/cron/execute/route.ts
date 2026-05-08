@@ -67,6 +67,10 @@ export async function GET(req: Request) {
   resultados.push(
 	await chamarRota(`/api/cron/verificar-instancias`)
   );
+  
+  resultados.push(
+	await chamarRota(`/api/cron/verificar-webhooks`)
+  );
 
   return NextResponse.json({
     ok: true,
