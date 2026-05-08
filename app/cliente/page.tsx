@@ -32,11 +32,6 @@ export default function ClientePage() {
   const [enviandoCodigo, setEnviandoCodigo] = useState(false);
   const [verificandoCodigo, setVerificandoCodigo] = useState(false);
 
-  const [logsIa, setLogsIa] = useState<AnyObj[]>([]);
-  const [buscaLog, setBuscaLog] = useState("");
-  const [filtroLog, setFiltroLog] = useState("todos");
-  const [carregandoLogs, setCarregandoLogs] = useState(false);
-
   useEffect(() => {
     iniciarSessao();
   }, []);
