@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import AdminCatalogo from "@/components/admin/AdminCatalogo";
 import AdminLogs from "@/components/admin/AdminLogs";
 import AdminSaudeAutomacoes from "@/components/admin/AdminSaudeAutomacoes";
+import AdminNotificacoes from "@/components/admin/AdminNotificacoes";
 
 type AnyObj = any;
 
@@ -857,6 +858,7 @@ export default function AdminPage() {
 
       <nav className="flex gap-2 flex-wrap mb-8 bg-zinc-900 border border-zinc-700 p-2 rounded-2xl">
         <Aba ativa={aba === "resumo"} onClick={() => setAba("resumo")}>Resumo</Aba>
+        <Aba ativa={aba === "notificacoes"} onClick={() => setAba("notificacoes")}>Notificações</Aba>
         <Aba ativa={aba === "catalogo"} onClick={() => setAba("catalogo")}>Serviços e planos</Aba>
         <Aba ativa={aba === "cupons"} onClick={() => setAba("cupons")}>Cupons</Aba>
         <Aba ativa={aba === "clientes"} onClick={() => setAba("clientes")}>Clientes</Aba>
@@ -882,6 +884,10 @@ export default function AdminPage() {
             </div>
           )}
         </section>
+      )}
+
+      {aba === "notificacoes" && (
+        <AdminNotificacoes adminToken={adminToken} />
       )}
 
       {aba === "catalogo" && (
