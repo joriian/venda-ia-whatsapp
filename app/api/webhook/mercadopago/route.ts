@@ -6,6 +6,7 @@ import {
   configurarInstanciaCompleta,
   gerarInstanceName,
 } from "@/lib/evolution-config";
+import { notificarPagamentoAprovado } from "@/lib/notificacoes";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -508,6 +509,13 @@ export async function POST(req: Request) {
         ok: false,
         erro: error.response?.data || error.message,
       };
+    }
+
+    if (ativacao.clienteServicoId) {
+      await notificarPagamentoAprovado({
+        cliente_id: cliente.id,
+        cliente_servico_id: ativacao.clienteServicoId,
+      });
     }
 
     return NextResponse.json({
