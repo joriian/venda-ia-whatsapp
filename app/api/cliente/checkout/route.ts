@@ -191,6 +191,25 @@ export async function POST(req: Request) {
     if (!cliente) {
       return NextResponse.json({ error: "Sessão expirada" }, { status: 401 });
     }
+	
+	if (!cliente.telefone_verificado) {
+  return NextResponse.json(
+    {
+      error:
+        "Antes de contratar, verifique seu número de WhatsApp na área do cliente.",
+    },
+    { status: 403 }
+  );
+}
+
+if (cliente.status === "bloqueado") {
+  return NextResponse.json(
+    {
+      error: "Sua conta está bloqueada. Entre em contato com o suporte.",
+    },
+    { status: 403 }
+  );
+}
 
     if (!servicoId || !planoId) {
       return NextResponse.json(
