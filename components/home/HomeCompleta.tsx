@@ -329,7 +329,7 @@ export default function HomeCompleta() {
           </div>
 
           <a
-            href="/cliente/login"
+            href="/login"
             className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-5 py-3 rounded-2xl font-bold text-center"
           >
             Já sou cliente
