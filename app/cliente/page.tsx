@@ -22,6 +22,11 @@ export default function ClientePage() {
   const [confirmarSenha, setConfirmarSenha] = useState("");
   const [alterandoSenha, setAlterandoSenha] = useState(false);
 
+  const [logsIa, setLogsIa] = useState<AnyObj[]>([]);
+  const [buscaLog, setBuscaLog] = useState("");
+  const [filtroLog, setFiltroLog] = useState("todos");
+  const [carregandoLogs, setCarregandoLogs] = useState(false);
+
   useEffect(() => {
     iniciarSessao();
   }, []);
@@ -157,6 +162,44 @@ export default function ClientePage() {
       alert("Erro ao controlar instância.");
     }
   }
+
+  async function carregarLogsIa() {
+    setCarregandoLogs(true);
+
+    try {
+      const res = await fetch("/api/cliente/logs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          token,
+          busca: buscaLog,
+          status: filtroLog,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        alert(data.detalhe || data.error || "Erro ao carregar logs da IA.");
+        return;
+      }
+
+      setLogsIa(data.logs || []);
+    } catch (error) {
+      console.error(error);
+      alert("Erro ao carregar logs da IA.");
+    } finally {
+      setCarregandoLogs(false);
+    }
+  }
+
+  useEffect(() => {
+    if (aba === "logs" && token) {
+      carregarLogsIa();
+    }
+  }, [aba, filtroLog, token]);
 
   async function alterarSenha() {
     if (!senhaAtual || !novaSenha || !confirmarSenha) {
@@ -379,6 +422,7 @@ export default function ClientePage() {
           <Aba ativa={aba === "servicos"} onClick={() => setAba("servicos")}>Meus serviços</Aba>
           <Aba ativa={aba === "planos"} onClick={() => setAba("planos")}>Contratar planos</Aba>
           <Aba ativa={aba === "pagamentos"} onClick={() => setAba("pagamentos")}>Pagamentos</Aba>
+          <Aba ativa={aba === "logs"} onClick={() => setAba("logs")}>Logs IA</Aba>
           <Aba ativa={aba === "conta"} onClick={() => setAba("conta")}>Minha conta</Aba>
         </nav>
 
@@ -504,6 +548,47 @@ export default function ClientePage() {
             </div>
 
             <TabelaPagamentos pagamentos={pagamentosFiltrados} statusPt={statusPt} dinheiro={dinheiro} dataPt={dataPt} />
+          </section>
+        )}
+
+        {aba === "logs" && (
+          <section className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
+            <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-6">
+              <div>
+                <h2 className="text-2xl font-bold">Logs da IA</h2>
+                <p className="text-gray-400 text-sm">
+                  Veja as últimas mensagens recebidas e se foram enviadas para a automação.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 w-full lg:w-auto">
+                <input
+                  value={buscaLog}
+                  onChange={(e) => setBuscaLog(e.target.value)}
+                  placeholder="Buscar mensagem, remetente, instância..."
+                  className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700 min-w-[260px]"
+                />
+
+                <select
+                  value={filtroLog}
+                  onChange={(e) => setFiltroLog(e.target.value)}
+                  className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700"
+                >
+                  <option value="todos">Todos</option>
+                  <option value="enviado">Enviados ao n8n</option>
+                  <option value="erro">Com erro</option>
+                </select>
+
+                <button
+                  onClick={carregarLogsIa}
+                  className="bg-green-600 hover:bg-green-700 rounded-2xl font-bold py-3"
+                >
+                  {carregandoLogs ? "Buscando..." : "Buscar"}
+                </button>
+              </div>
+            </div>
+
+            <LogsIaSection logs={logsIa} dataHoraPt={dataHoraPt} />
           </section>
         )}
 
@@ -843,6 +928,66 @@ function ListaPagamentos({ pagamentos, statusPt, dinheiro, dataPt }: any) {
               <p className="text-gray-400 text-xs mt-1">{dataPt(p.criado_em)}</p>
             </div>
             <StatusBadge status={statusPt(p.status)} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LogsIaSection({ logs, dataHoraPt }: any) {
+  if (!logs || logs.length === 0) {
+    return <Vazio texto="Nenhum log encontrado ainda." />;
+  }
+
+  return (
+    <div className="grid gap-4">
+      {logs.map((log: any) => (
+        <div key={log.id} className="bg-zinc-800 border border-zinc-700 rounded-3xl p-5">
+          <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 mb-4">
+            <div>
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <span
+                  className={`px-3 py-1 rounded-full border text-xs font-bold ${
+                    log.enviado_n8n
+                      ? "bg-green-900/40 text-green-400 border-green-700"
+                      : "bg-red-900/40 text-red-400 border-red-700"
+                  }`}
+                >
+                  {log.enviado_n8n ? "ENVIADO AO N8N" : "NÃO ENVIADO"}
+                </span>
+
+                <span className="bg-zinc-900 border border-zinc-700 px-3 py-1 rounded-full text-xs font-bold text-gray-300">
+                  {log.evento || "Evento"}
+                </span>
+              </div>
+
+              <h3 className="font-bold text-lg break-all">
+                {log.servicos_ia?.nome || "Serviço"}
+              </h3>
+
+              <p className="text-gray-400 text-sm mt-1">
+                {dataHoraPt(log.criado_em)}
+              </p>
+            </div>
+
+            <div className="text-sm text-gray-400 xl:text-right">
+              <p>Remetente: <span className="text-white font-bold break-all">{log.nome_remetente || log.remetente || "-"}</span></p>
+              <p>Instância: <span className="text-white font-bold break-all">{log.instance_name || "-"}</span></p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 mb-4">
+            <Info label="Remetente" value={log.remetente || "-"} />
+            <Info label="Nome" value={log.nome_remetente || "-"} />
+            <Info label="Erro" value={log.erro_n8n || "-"} />
+          </div>
+
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-4">
+            <p className="text-gray-400 text-xs mb-2">Mensagem</p>
+            <p className="text-sm whitespace-pre-wrap break-words">
+              {log.mensagem || "Sem texto capturado."}
+            </p>
           </div>
         </div>
       ))}
