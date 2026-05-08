@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import crypto from "crypto";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -11,13 +11,6 @@ const supabase = createClient(
 const JWT_SECRET =
   process.env.JWT_SECRET ||
   "NEXORA_SECRET_2026";
-
-function hashSenha(senha: string) {
-  return crypto
-    .createHash("sha256")
-    .update(senha)
-    .digest("hex");
-}
 
 function gerarAccessToken(cliente: any) {
   return jwt.sign(
@@ -38,44 +31,20 @@ function gerarRefreshToken() {
   return crypto.randomBytes(64).toString("hex");
 }
 
-export async function POST(req: Request) {
+export async function POST(
+  req: NextRequest
+) {
   try {
-    const body = await req.json();
+    const refreshToken =
+      req.cookies.get(
+        "clienteRefreshToken"
+      )?.value;
 
-    const email = String(
-      body.email || ""
-    )
-      .trim()
-      .toLowerCase();
-
-    const senha = String(
-      body.senha || ""
-    ).trim();
-
-    if (!email || !senha) {
+    if (!refreshToken) {
       return NextResponse.json(
         {
           error:
-            "Email e senha obrigatórios",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    const { data: cliente, error } =
-      await supabase
-        .from("clientes_ia_whatsapp")
-        .select("*")
-        .eq("email", email)
-        .maybeSingle();
-
-    if (error || !cliente) {
-      return NextResponse.json(
-        {
-          error:
-            "Email ou senha inválidos",
+            "Refresh token ausente",
         },
         {
           status: 401,
@@ -83,20 +52,25 @@ export async function POST(req: Request) {
       );
     }
 
-    const senhaHash =
-      hashSenha(senha);
+    const {
+      data: refreshData,
+      error,
+    } = await supabase
+      .from(
+        "refresh_tokens_clientes"
+      )
+      .select("*")
+      .eq(
+        "refresh_token",
+        refreshToken
+      )
+      .maybeSingle();
 
-    const senhaBanco =
-      cliente.senha_hash || "";
-
-    const senhaValida =
-      senhaBanco === senhaHash;
-
-    if (!senhaValida) {
+    if (error || !refreshData) {
       return NextResponse.json(
         {
           error:
-            "Email ou senha inválidos",
+            "Refresh token inválido",
         },
         {
           status: 401,
@@ -104,18 +78,74 @@ export async function POST(req: Request) {
       );
     }
 
-    const accessToken =
+    const expirado =
+      new Date(
+        refreshData.expires_at
+      ) < new Date();
+
+    if (expirado) {
+      return NextResponse.json(
+        {
+          error:
+            "Refresh token expirado",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    const {
+      data: cliente,
+      error: clienteError,
+    } = await supabase
+      .from(
+        "clientes_ia_whatsapp"
+      )
+      .select("*")
+      .eq(
+        "id",
+        refreshData.cliente_id
+      )
+      .maybeSingle();
+
+    if (
+      clienteError ||
+      !cliente
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Cliente não encontrado",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    const novoAccessToken =
       gerarAccessToken(cliente);
 
-    const refreshToken =
+    const novoRefreshToken =
       gerarRefreshToken();
 
-    const refreshExpires =
+    const novaExpiracao =
       new Date();
 
-    refreshExpires.setDate(
-      refreshExpires.getDate() + 30
+    novaExpiracao.setDate(
+      novaExpiracao.getDate() + 30
     );
+
+    await supabase
+      .from(
+        "refresh_tokens_clientes"
+      )
+      .delete()
+      .eq(
+        "refresh_token",
+        refreshToken
+      );
 
     await supabase
       .from(
@@ -124,25 +154,19 @@ export async function POST(req: Request) {
       .insert({
         cliente_id: cliente.id,
         refresh_token:
-          refreshToken,
+          novoRefreshToken,
         expires_at:
-          refreshExpires.toISOString(),
+          novaExpiracao.toISOString(),
       });
 
     const response =
       NextResponse.json({
         ok: true,
-        token: accessToken,
-        cliente: {
-          id: cliente.id,
-          nome: cliente.nome,
-          email: cliente.email,
-        },
       });
 
     response.cookies.set(
       "clienteToken",
-      accessToken,
+      novoAccessToken,
       {
         httpOnly: true,
         secure: true,
@@ -154,7 +178,7 @@ export async function POST(req: Request) {
 
     response.cookies.set(
       "clienteRefreshToken",
-      refreshToken,
+      novoRefreshToken,
       {
         httpOnly: true,
         secure: true,
@@ -172,7 +196,7 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         error:
-          "Erro interno no login",
+          "Erro ao renovar sessão",
       },
       {
         status: 500,
