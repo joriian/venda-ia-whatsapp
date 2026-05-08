@@ -277,6 +277,48 @@ export default function AdminPage() {
     await carregarTudo(adminToken, admin);
   }
 
+  async function controlarInstanciaAdmin(
+    instanceName: string,
+    acao: "status" | "qrcode" | "reiniciar" | "desconectar"
+  ) {
+    if (!instanceName) {
+      alert("Instância inválida.");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/admin/evolution", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-token": adminToken,
+        },
+        body: JSON.stringify({
+          instance_name: instanceName,
+          acao,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        alert(data.detalhe || data.error || "Erro ao controlar instância.");
+        return;
+      }
+
+      await carregarInstancias();
+      await recarregarDados();
+
+      if (acao === "status") alert("Status atualizado.");
+      if (acao === "qrcode") alert("QR Code solicitado.");
+      if (acao === "reiniciar") alert("Instância reiniciada.");
+      if (acao === "desconectar") alert("Instância desconectada.");
+    } catch (error) {
+      console.error(error);
+      alert("Erro ao controlar instância.");
+    }
+  }
+
   async function salvarServico(dados: any) {
     const res = await fetch("/api/admin/catalogo", {
       method: "POST",
@@ -740,9 +782,16 @@ export default function AdminPage() {
     return instancias.filter((instancia) => {
       const texto = [
         instancia.instance,
+        instancia.instance_name,
         instancia.status,
         instancia.numero,
         instancia.nome,
+        instancia.cliente_nome,
+        instancia.cliente_email,
+        instancia.cliente_telefone,
+        instancia.servico_nome,
+        instancia.workflow_id,
+        instancia.webhook_url,
       ]
         .join(" ")
         .toLowerCase();
@@ -958,7 +1007,10 @@ export default function AdminPage() {
             </div>
           </div>
 
-          <TabelaInstancias instancias={instanciasPaginadas} />
+          <TabelaInstancias
+            instancias={instanciasPaginadas}
+            controlarInstanciaAdmin={controlarInstanciaAdmin}
+          />
 
           <Paginacao
             pagina={paginaInstancias}
@@ -1447,36 +1499,94 @@ function PermissoesSection({ permissoes, setPermissoes, salvarPermissao }: any) 
   );
 }
 
-function TabelaInstancias({ instancias }: any) {
-  return (
-    <div className="overflow-x-auto bg-zinc-900 border border-zinc-700 rounded-xl">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-zinc-700 text-left">
-            <th className="p-3">Status</th>
-            <th className="p-3">Instância</th>
-            <th className="p-3">Nome</th>
-            <th className="p-3">Número</th>
-            <th className="p-3">Estado</th>
-          </tr>
-        </thead>
+function TabelaInstancias({ instancias, controlarInstanciaAdmin }: any) {
+  function nomeInstancia(i: any) {
+    return i.instance || i.instance_name || "";
+  }
 
-        <tbody>
-          {instancias.map((i: any, index: number) => (
-            <tr key={index} className="border-b border-zinc-800">
-              <td className="p-3">
-                <span className={`px-3 py-1 rounded-full border text-xs font-bold ${i.conectado ? "bg-green-900/40 text-green-400 border-green-700" : "bg-red-900/40 text-red-400 border-red-700"}`}>
-                  {i.conectado ? "Conectada" : "Desconectada"}
-                </span>
-              </td>
-              <td className="p-3">{i.instance}</td>
-              <td className="p-3">{i.nome || "-"}</td>
-              <td className="p-3">{i.numero || "-"}</td>
-              <td className="p-3">{i.status || "-"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+  return (
+    <div className="grid gap-4">
+      {instancias.map((i: any, index: number) => {
+        const instanceName = nomeInstancia(i);
+
+        return (
+          <div
+            key={instanceName || index}
+            className="bg-zinc-900 border border-zinc-700 rounded-2xl p-4"
+          >
+            <div className="flex flex-col 2xl:flex-row 2xl:items-start 2xl:justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-3 mb-4">
+                  <span
+                    className={`px-3 py-1 rounded-full border text-xs font-bold ${
+                      i.conectado
+                        ? "bg-green-900/40 text-green-400 border-green-700"
+                        : "bg-red-900/40 text-red-400 border-red-700"
+                    }`}
+                  >
+                    {i.conectado ? "Conectada" : "Desconectada"}
+                  </span>
+
+                  <h3 className="text-lg font-bold break-all">
+                    {instanceName || "Instância sem nome"}
+                  </h3>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                  <InfoMini label="Cliente" value={i.cliente_nome || i.cliente || "-"} />
+                  <InfoMini label="Serviço" value={i.servico_nome || i.servico || "-"} />
+                  <InfoMini label="Número" value={i.numero || "-"} />
+                  <InfoMini label="Estado" value={i.status || "-"} />
+                  <InfoMini label="Nome WhatsApp" value={i.nome || "-"} />
+                  <InfoMini label="Workflow" value={i.workflow_id || "-"} />
+                  <InfoMini label="Webhook" value={i.webhook_url || "-"} />
+                  <InfoMini label="ID instância" value={instanceName || "-"} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 2xl:grid-cols-1 gap-2 min-w-[190px]">
+                <button
+                  onClick={() => controlarInstanciaAdmin(instanceName, "status")}
+                  className="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded-xl font-bold text-sm"
+                >
+                  Atualizar
+                </button>
+
+                <button
+                  onClick={() => controlarInstanciaAdmin(instanceName, "qrcode")}
+                  className="bg-yellow-600 hover:bg-yellow-700 px-3 py-2 rounded-xl font-bold text-sm"
+                >
+                  QR Code
+                </button>
+
+                <button
+                  onClick={() => controlarInstanciaAdmin(instanceName, "reiniciar")}
+                  className="bg-purple-600 hover:bg-purple-700 px-3 py-2 rounded-xl font-bold text-sm"
+                >
+                  Reiniciar
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (confirm("Deseja realmente desconectar esta instância?")) {
+                      controlarInstanciaAdmin(instanceName, "desconectar");
+                    }
+                  }}
+                  className="bg-red-600 hover:bg-red-700 px-3 py-2 rounded-xl font-bold text-sm"
+                >
+                  Desconectar
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      {instancias.length === 0 && (
+        <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-8 text-center text-gray-400">
+          Nenhuma instância encontrada.
+        </div>
+      )}
     </div>
   );
 }
