@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import ClienteLayoutPremium from "@/components/cliente/ClienteLayoutPremium";
 
 type AnyObj = any;
 
@@ -481,35 +482,13 @@ export default function ClientePage() {
   }
 
   return (
-    <main className="min-h-screen bg-black text-white p-4 md:p-6">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-5 mb-8">
-          <div>
-            <p className="text-green-400 font-bold text-sm uppercase tracking-wider">Painel do cliente</p>
-            <h1 className="text-3xl md:text-4xl font-black mt-1">Olá, {cliente?.nome || "cliente"}</h1>
-            <p className="text-gray-400 text-sm mt-2 break-all">{cliente?.email}</p>
-          </div>
-
-          <div className="flex gap-3 flex-wrap">
-            <button onClick={() => carregarDados()} className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-5 py-3 rounded-2xl font-bold">
-              Atualizar
-            </button>
-            <button onClick={sair} className="bg-red-600 hover:bg-red-700 px-5 py-3 rounded-2xl font-bold">
-              Sair
-            </button>
-          </div>
-        </div>
-
-        <nav className="flex gap-2 flex-wrap mb-8 bg-zinc-900 border border-zinc-700 p-2 rounded-3xl sticky top-3 z-20 backdrop-blur">
-          <Aba ativa={aba === "resumo"} onClick={() => setAba("resumo")}>Resumo</Aba>
-          <Aba ativa={aba === "whatsapp"} onClick={() => setAba("whatsapp")}>WhatsApp</Aba>
-          <Aba ativa={aba === "servicos"} onClick={() => setAba("servicos")}>Meus serviços</Aba>
-          <Aba ativa={aba === "planos"} onClick={() => setAba("planos")}>Contratar planos</Aba>
-          <Aba ativa={aba === "pagamentos"} onClick={() => setAba("pagamentos")}>Pagamentos</Aba>
-          <Aba ativa={aba === "logs"} onClick={() => setAba("logs")}>Logs IA</Aba>
-          <Aba ativa={aba === "conta"} onClick={() => setAba("conta")}>Minha conta</Aba>
-        </nav>
-
+    <ClienteLayoutPremium
+      cliente={cliente}
+      aba={aba}
+      setAba={setAba}
+      onAtualizar={() => carregarDados()}
+      onSair={sair}
+    >
         {aba === "resumo" && (
           <section className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
@@ -873,8 +852,7 @@ export default function ClientePage() {
             </div>
           </section>
         )}
-      </div>
-    </main>
+    </ClienteLayoutPremium>
   );
 }
 
