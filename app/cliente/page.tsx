@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import ClienteLayoutPremium from "@/components/cliente/ClienteLayoutPremium";
+import ClienteMetricasPremium from "@/components/cliente/ClienteMetricasPremium";
 
 type AnyObj = any;
 
@@ -491,17 +492,13 @@ export default function ClientePage() {
     >
         {aba === "resumo" && (
           <section className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-              <Card titulo="Serviços ativos" valor={servicosAtivos.length} texto="Contratações liberadas" />
-              <Card titulo="Total de serviços" valor={servicosCliente.length} texto="Serviços na conta" />
-              <Card titulo="WhatsApps conectados" valor={servicosConectados.length} texto="Instâncias online" />
-              <Card titulo="Pagamentos" valor={pagamentos.length} texto="Histórico geral" />
-              <Card
-                titulo="WhatsApp verificado"
-                valor={cliente?.telefone_verificado ? "Sim" : "Não"}
-                texto={cliente?.telefone_verificado ? "Cliente liberado para compras" : "Verificação pendente"}
-              />
-            </div>
+           <ClienteMetricasPremium
+  servicosAtivos={servicosAtivos.length}
+  totalServicos={servicosCliente.length}
+  whatsappsConectados={servicosConectados.length}
+  pagamentos={pagamentos.length}
+  telefoneVerificado={Boolean(cliente?.telefone_verificado)}
+/>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
               <PainelConta cliente={cliente} statusPt={statusPt} />
