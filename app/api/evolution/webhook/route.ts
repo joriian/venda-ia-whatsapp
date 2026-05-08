@@ -22,46 +22,27 @@ function pegarInstanceName(body: any) {
   );
 }
 
-function pegarQrCode(body: any) {
+function pegarMensagem(body: any) {
   return (
-    body?.data?.qrcode ||
-    body?.data?.qr ||
-    body?.qrcode ||
-    body?.qr ||
-    body?.base64 ||
-    body?.data?.base64 ||
+    body?.data?.message?.conversation ||
+    body?.data?.message?.extendedTextMessage?.text ||
+    body?.data?.text ||
+    body?.text ||
     ""
   );
 }
 
-function pegarStatus(body: any) {
+function pegarRemetente(body: any) {
   return (
-    body?.data?.state ||
-    body?.data?.status ||
-    body?.state ||
-    body?.status ||
-    body?.connectionStatus ||
-    "connecting"
-  );
-}
-
-function pegarNumero(body: any) {
-  return (
-    body?.data?.ownerJid ||
-    body?.data?.profile?.id ||
-    body?.data?.jid ||
+    body?.data?.key?.remoteJid ||
+    body?.data?.remoteJid ||
     body?.sender ||
     ""
   );
 }
 
-function pegarNome(body: any) {
-  return (
-    body?.data?.profileName ||
-    body?.data?.pushName ||
-    body?.data?.name ||
-    ""
-  );
+function pegarNomeRemetente(body: any) {
+  return body?.data?.pushName || body?.data?.senderName || "";
 }
 
 async function buscarVinculo(instanceName: string) {
@@ -72,6 +53,22 @@ async function buscarVinculo(instanceName: string) {
     .maybeSingle();
 
   return data;
+}
+
+async function salvarLog(params: any) {
+  await supabase.from("logs_mensagens").insert({
+    cliente_id: params.vinculo?.cliente_id || null,
+    servico_id: params.vinculo?.servico_id || null,
+    cliente_servico_id: params.vinculo?.cliente_servico_id || null,
+    instance_name: params.instanceName,
+    evento: params.evento,
+    remetente: params.remetente,
+    nome_remetente: params.nomeRemetente,
+    mensagem: params.mensagem,
+    enviado_n8n: params.enviadoN8n,
+    erro_n8n: params.erroN8n || null,
+    payload: params.body,
+  });
 }
 
 async function encaminharParaN8n(webhookUrl: string | null, body: any, vinculo: any) {
@@ -92,10 +89,9 @@ async function encaminharParaN8n(webhookUrl: string | null, body: any, vinculo: 
 
     return { enviado: true };
   } catch (error: any) {
-    console.log("ERRO ENCAMINHAR N8N:", error.response?.data || error.message);
     return {
       enviado: false,
-      erro: error.response?.data || error.message,
+      erro: JSON.stringify(error.response?.data || error.message),
     };
   }
 }
@@ -108,79 +104,20 @@ export async function POST(req: Request) {
     const instanceName = pegarInstanceName(body);
 
     if (!instanceName) {
-      return NextResponse.json({
-        ok: true,
-        ignored: "Evento sem instanceName",
-      });
+      return NextResponse.json({ ok: true, ignored: "sem instanceName" });
     }
 
     const vinculo = await buscarVinculo(instanceName);
-
-    const clienteId = vinculo?.cliente_id || null;
-    const servicoId = vinculo?.servico_id || null;
-    const clienteServicoId = vinculo?.cliente_servico_id || null;
-
-    const qrcode = pegarQrCode(body);
-    const status = pegarStatus(body);
-    const numero = pegarNumero(body);
-    const nome = pegarNome(body);
-
-    await supabase.from("evolution_qrcodes").upsert(
-      {
-        cliente_id: clienteId,
-        servico_id: servicoId,
-        cliente_servico_id: clienteServicoId,
-        instance_name: instanceName,
-        qrcode: qrcode || null,
-        status,
-        numero: numero || null,
-        nome: nome || null,
-        atualizado_em: new Date().toISOString(),
-      },
-      {
-        onConflict: "instance_name",
-      }
-    );
-
-    await supabase
-      .from("instancias_evolution")
-      .update({
-        status,
-        numero: numero || null,
-        nome: nome || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("instance_name", instanceName);
-
-    if (clienteServicoId) {
-      await supabase
-        .from("cliente_servicos")
-        .update({
-          evolution_status: status,
-          evolution_qrcode: qrcode || null,
-          evolution_numero: numero || null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", clienteServicoId);
-    } else if (clienteId && servicoId) {
-      await supabase
-        .from("cliente_servicos")
-        .update({
-          evolution_status: status,
-          evolution_qrcode: qrcode || null,
-          evolution_numero: numero || null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("cliente_id", clienteId)
-        .eq("servico_id", servicoId);
-    }
-
-    let n8n: any = {
-	enviado: false,
-	motivo: "evento não encaminhado",
-};
+    const mensagem = pegarMensagem(body);
+    const remetente = pegarRemetente(body);
+    const nomeRemetente = pegarNomeRemetente(body);
 
     const eventoNormalizado = String(evento || "").toUpperCase();
+
+    let n8n: any = {
+      enviado: false,
+      motivo: "evento não encaminhado",
+    };
 
     if (
       eventoNormalizado.includes("MESSAGES_UPSERT") ||
@@ -189,11 +126,22 @@ export async function POST(req: Request) {
       n8n = await encaminharParaN8n(vinculo?.webhook_url || null, body, vinculo);
     }
 
+    await salvarLog({
+      vinculo,
+      instanceName,
+      evento,
+      remetente,
+      nomeRemetente,
+      mensagem,
+      enviadoN8n: Boolean(n8n.enviado),
+      erroN8n: n8n.erro || n8n.motivo || null,
+      body,
+    });
+
     return NextResponse.json({
       ok: true,
       evento,
       instanceName,
-      status,
       n8n,
     });
   } catch (error: any) {
