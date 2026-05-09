@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { POST as webhookMercadoPago } from "@/app/api/mercadopago/webhook/route";
+import { POST as webhookMercadoPago } from "../mercadopago/route";
 
 export async function GET(req: Request) {
   try {
