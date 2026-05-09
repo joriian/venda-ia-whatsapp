@@ -1,28 +1,33 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import axios from "axios";
+import jwt from "jsonwebtoken";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+const JWT_SECRET = process.env.JWT_SECRET || "NEXORA_SECRET_2026";
+
 async function validarCliente(token: string) {
-  const { data: cliente } = await supabase
-    .from("clientes_ia_whatsapp")
-    .select("*")
-    .eq("session_token", token)
-    .maybeSingle();
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
 
-  if (!cliente) return null;
+    if (!decoded?.id || decoded?.tipo !== "cliente") {
+      return null;
+    }
 
-  const expira = cliente.session_expires_at
-    ? new Date(cliente.session_expires_at)
-    : null;
+    const { data: cliente } = await supabase
+      .from("clientes_ia_whatsapp")
+      .select("*")
+      .eq("id", decoded.id)
+      .maybeSingle();
 
-  if (!expira || expira < new Date()) return null;
-
-  return cliente;
+    return cliente || null;
+  } catch {
+    return null;
+  }
 }
 
 async function buscarPlano(planoId: any) {
@@ -197,13 +202,19 @@ export async function POST(req: Request) {
     const { token } = await req.json();
 
     if (!token) {
-      return NextResponse.json({ error: "Token obrigatório" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Token obrigatório" },
+        { status: 401 }
+      );
     }
 
     const cliente = await validarCliente(token);
 
     if (!cliente) {
-      return NextResponse.json({ error: "Sessão inválida" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Sessão inválida" },
+        { status: 401 }
+      );
     }
 
     const { data: servicos } = await supabase
