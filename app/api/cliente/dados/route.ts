@@ -8,21 +8,37 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const JWT_SECRET = process.env.JWT_SECRET || "NEXORA_SECRET_2026";
+const JWT_SECRET =
+  process.env.JWT_SECRET ||
+  "NEXORA_SECRET_2026";
+
+const EVOLUTION_API_URL = String(
+  process.env.EVOLUTION_API_URL || ""
+).replace(/\/$/, "");
+
+const EVOLUTION_API_KEY =
+  process.env.EVOLUTION_API_KEY!;
 
 async function validarCliente(token: string) {
   try {
-    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const decoded: any = jwt.verify(
+      token,
+      JWT_SECRET
+    );
 
-    if (!decoded?.id || decoded?.tipo !== "cliente") {
+    if (
+      !decoded?.id ||
+      decoded?.tipo !== "cliente"
+    ) {
       return null;
     }
 
-    const { data: cliente } = await supabase
-      .from("clientes_ia_whatsapp")
-      .select("*")
-      .eq("id", decoded.id)
-      .maybeSingle();
+    const { data: cliente } =
+      await supabase
+        .from("clientes_ia_whatsapp")
+        .select("*")
+        .eq("id", decoded.id)
+        .maybeSingle();
 
     return cliente || null;
   } catch {
@@ -30,307 +46,277 @@ async function validarCliente(token: string) {
   }
 }
 
-async function buscarPlano(planoId: any) {
-  if (!planoId) return null;
-
-  const { data } = await supabase
-    .from("planos")
-    .select("*")
-    .eq("id", String(planoId))
-    .maybeSingle();
-
+function pegarQr(data: any) {
   return (
-    data || {
-      id: String(planoId),
-      nome: String(planoId),
-      valor: 0,
-      meses: 1,
-      ativo: true,
-    }
+    data?.base64 ||
+    data?.qrcode ||
+    data?.code ||
+    data?.qr ||
+    data?.data?.base64 ||
+    data?.data?.qrcode ||
+    data?.qrcode?.base64 ||
+    null
   );
 }
 
-async function buscarServico(servicoId: any, plano: any) {
-  if (servicoId) {
-    const { data } = await supabase
-      .from("servicos_ia")
-      .select("*")
-      .eq("id", servicoId)
-      .maybeSingle();
+async function salvarQrCode(
+  clienteServico: any,
+  qr: string | null,
+  status: string
+) {
+  await supabase
+    .from("cliente_servicos")
+    .update({
+      evolution_qrcode: qr,
+      evolution_status: status,
+      updated_at:
+        new Date().toISOString(),
+    })
+    .eq("id", clienteServico.id);
 
-    if (data) return data;
-  }
-
-  if (plano?.servico_id) {
-    const { data } = await supabase
-      .from("servicos_ia")
-      .select("*")
-      .eq("id", plano.servico_id)
-      .maybeSingle();
-
-    if (data) return data;
-  }
-
-  return {
-    id: "servico_principal",
-    nome: "Serviço principal",
-    descricao: "Serviço contratado",
-    ativo: true,
-  };
-}
-
-async function buscarStatusEvolution(instanceName: string) {
-  if (!instanceName) {
-    return {
-      instance_name: "",
-      status: "desconectado",
-      conectado: false,
-    };
-  }
-
-  try {
-    const response = await axios.get(
-      `${process.env.EVOLUTION_API_URL}/instance/fetchInstances`,
+  await supabase
+    .from("evolution_qrcodes")
+    .upsert(
       {
-        headers: {
-          apikey: process.env.EVOLUTION_API_KEY!,
-        },
+        cliente_id:
+          clienteServico.cliente_id,
+        servico_id:
+          clienteServico.servico_id,
+        cliente_servico_id:
+          clienteServico.id,
+        instance_name:
+          clienteServico.instance_name,
+        qrcode: qr,
+        status,
+        atualizado_em:
+          new Date().toISOString(),
+      },
+      {
+        onConflict: "instance_name",
       }
     );
 
-    const lista = Array.isArray(response.data)
-      ? response.data
-      : response.data?.instances || [];
-
-    const encontrada = lista.find((item: any) => {
-      const nome =
-        item?.instanceName ||
-        item?.instance?.instanceName ||
-        item?.name ||
-        item?.instance;
-
-      return nome === instanceName;
-    });
-
-    if (!encontrada) {
-      return {
-        instance_name: instanceName,
-        status: "desconectado",
-        conectado: false,
-      };
-    }
-
-    const status =
-      encontrada?.connectionStatus ||
-      encontrada?.status ||
-      encontrada?.instance?.state ||
-      encontrada?.state ||
-      "desconectado";
-
-    const conectado =
-      status === "open" ||
-      status === "connected" ||
-      status === "conectado";
-
-    return {
-      instance_name: instanceName,
-      status: conectado ? "open" : status,
-      conectado,
-    };
-  } catch {
-    return {
-      instance_name: instanceName,
-      status: "desconectado",
-      conectado: false,
-    };
-  }
-}
-
-async function buscarPagamentos(cliente: any, servicosCliente: any[]) {
-  const { data, error } = await supabase
-    .from("pagamentos_ia_whatsapp")
-    .select("*")
-    .eq("cliente_id", cliente.id)
-    .order("criado_em", { ascending: false })
-    .limit(20);
-
-  if (!error && data && data.length > 0) {
-    return data;
-  }
-
-  return (servicosCliente || []).map((item: any) => ({
-    id: `fallback-${item.id}`,
-    cliente_id: cliente.id,
-    mercado_pago_id: null,
-    status: item.status || cliente.status || "aguardando_pagamento",
-    valor: item.planos?.valor || 0,
-    criado_em: item.data_inicio || item.created_at || cliente.data_inicio,
-    plano_id: item.plano_id || cliente.plano_id,
-    payment_id: "Registro do plano",
-    cupom_codigo: cliente.cupom_codigo || null,
-    desconto_valor: 0,
-    valor_original: item.planos?.valor || 0,
-  }));
-}
-
-async function buscarQrCodePorInstancia(instanceName: string) {
-  if (!instanceName) return null;
-
-  const { data } = await supabase
-    .from("evolution_qrcodes")
-    .select("*")
-    .eq("instance_name", instanceName)
-    .maybeSingle();
-
-  return data || null;
-}
-
-async function buscarInstanciaSalva(instanceName: string) {
-  if (!instanceName) return null;
-
-  const { data } = await supabase
+  await supabase
     .from("instancias_evolution")
-    .select("*")
-    .eq("instance_name", instanceName)
-    .maybeSingle();
-
-  return data || null;
+    .upsert(
+      {
+        cliente_id:
+          clienteServico.cliente_id,
+        servico_id:
+          clienteServico.servico_id,
+        instance_name:
+          clienteServico.instance_name,
+        qrcode: qr,
+        status,
+        criado_em:
+          new Date().toISOString(),
+      },
+      {
+        onConflict: "instance_name",
+      }
+    );
 }
 
 export async function POST(req: Request) {
   try {
-    const { token } = await req.json();
+    const body = await req.json();
+
+    const token = body.token;
+    const acao = body.acao;
+    const clienteServicoId =
+      body.cliente_servico_id;
 
     if (!token) {
       return NextResponse.json(
-        { error: "Token obrigatório" },
+        {
+          error: "Token obrigatório",
+        },
         { status: 401 }
       );
     }
 
-    const cliente = await validarCliente(token);
+    const cliente =
+      await validarCliente(token);
 
     if (!cliente) {
       return NextResponse.json(
-        { error: "Sessão inválida" },
+        {
+          error: "Sessão inválida",
+        },
         { status: 401 }
       );
     }
 
-    const { data: servicos } = await supabase
-      .from("cliente_servicos")
-      .select(`
-        *,
-        servicos_ia (*),
-        planos (*)
-      `)
-      .eq("cliente_id", cliente.id)
-      .order("created_at", { ascending: false });
+    const { data: clienteServico } =
+      await supabase
+        .from("cliente_servicos")
+        .select("*")
+        .eq("id", clienteServicoId)
+        .eq("cliente_id", cliente.id)
+        .maybeSingle();
 
-    let servicosCliente: any[] = servicos || [];
-
-    if (servicosCliente.length === 0) {
-      const plano = await buscarPlano(cliente.plano_id);
-      const servico = await buscarServico(cliente.servico_id, plano);
-
-      servicosCliente = [
+    if (!clienteServico) {
+      return NextResponse.json(
         {
-          id: "principal",
-          cliente_id: cliente.id,
-          servico_id: cliente.servico_id || servico?.id || "servico_principal",
-          plano_id: cliente.plano_id || plano?.id || "plano_principal",
-          status: cliente.status || "aguardando_pagamento",
-          data_inicio: cliente.data_inicio,
-          data_expiracao: cliente.data_expiracao,
-          created_at: cliente.criado_em || cliente.created_at || cliente.data_inicio,
-          instance_name: null,
-          evolution_status: "desconectado",
-          evolution_qrcode: null,
-          evolution_numero: null,
-          servicos_ia: servico,
-          planos: plano,
+          error:
+            "Serviço não encontrado",
         },
-      ];
+        { status: 404 }
+      );
     }
 
-    const servicosComEvolution = await Promise.all(
-      servicosCliente.map(async (item: any) => {
-        const instanceName = item.instance_name;
+    const instanceName =
+      clienteServico.instance_name;
 
-        const qrcodeSalvo = await buscarQrCodePorInstancia(instanceName);
-        const instanciaSalva = await buscarInstanciaSalva(instanceName);
-        const statusAtual = await buscarStatusEvolution(instanceName);
+    if (!instanceName) {
+      return NextResponse.json(
+        {
+          error:
+            "Instância não configurada",
+        },
+        { status: 400 }
+      );
+    }
 
-        const statusFinal =
-          statusAtual?.status ||
-          qrcodeSalvo?.status ||
-          instanciaSalva?.status ||
-          item.evolution_status ||
-          "desconectado";
+    // GERAR QR CODE
+    if (
+      acao === "qrcode" ||
+      acao === "novo_qrcode"
+    ) {
+      const response =
+        await axios.get(
+          `${EVOLUTION_API_URL}/instance/connect/${instanceName}`,
+          {
+            headers: {
+              apikey:
+                EVOLUTION_API_KEY,
+            },
+          }
+        );
 
-        return {
-          ...item,
-          evolution: {
-            instance_name: instanceName,
-            status: statusFinal,
-            conectado:
-              statusFinal === "open" ||
-              statusFinal === "connected" ||
-              statusFinal === "conectado",
-            qrcode:
-              qrcodeSalvo?.qrcode ||
-              item.evolution_qrcode ||
-              null,
-            numero:
-              qrcodeSalvo?.numero ||
-              instanciaSalva?.numero ||
-              item.evolution_numero ||
-              null,
-            nome:
-              qrcodeSalvo?.nome ||
-              instanciaSalva?.nome ||
-              null,
-            atualizado_em:
-              qrcodeSalvo?.atualizado_em ||
-              instanciaSalva?.updated_at ||
-              null,
+      console.log(
+        "QR EVOLUTION:",
+        response.data
+      );
+
+      let qr = pegarQr(
+        response.data
+      );
+
+      if (
+        qr &&
+        !String(qr).startsWith(
+          "data:image"
+        )
+      ) {
+        qr = `data:image/png;base64,${qr}`;
+      }
+
+      await salvarQrCode(
+        clienteServico,
+        qr,
+        "connecting"
+      );
+
+      return NextResponse.json({
+        ok: true,
+        status: "connecting",
+        qrcode: qr,
+      });
+    }
+
+    // STATUS
+    if (acao === "status") {
+      const response =
+        await axios.get(
+          `${EVOLUTION_API_URL}/instance/connectionState/${instanceName}`,
+          {
+            headers: {
+              apikey:
+                EVOLUTION_API_KEY,
+            },
+          }
+        );
+
+      const status =
+        response.data?.instance
+          ?.state ||
+        response.data?.state ||
+        "close";
+
+      await salvarQrCode(
+        clienteServico,
+        clienteServico.evolution_qrcode,
+        status
+      );
+
+      return NextResponse.json({
+        ok: true,
+        status,
+      });
+    }
+
+    // REINICIAR
+    if (acao === "reiniciar") {
+      await axios.put(
+        `${EVOLUTION_API_URL}/instance/restart/${instanceName}`,
+        {},
+        {
+          headers: {
+            apikey:
+              EVOLUTION_API_KEY,
           },
-        };
-      })
-    );
+        }
+      );
 
-    const pagamentos = await buscarPagamentos(cliente, servicosComEvolution);
+      return NextResponse.json({
+        ok: true,
+      });
+    }
 
-    const { data: catalogoRaw } = await supabase
-      .from("servicos_ia")
-      .select(`
-        *,
-        planos (*)
-      `)
-      .eq("ativo", true)
-      .order("ordem", { ascending: true });
+    // DESCONECTAR
+    if (acao === "desconectar") {
+      await axios.delete(
+        `${EVOLUTION_API_URL}/instance/logout/${instanceName}`,
+        {
+          headers: {
+            apikey:
+              EVOLUTION_API_KEY,
+          },
+        }
+      );
 
-    const catalogo = (catalogoRaw || []).map((servico: any) => ({
-      ...servico,
-      planos: (servico.planos || []).sort((a: any, b: any) => {
-        return Number(a.ordem || 0) - Number(b.ordem || 0);
-      }),
-    }));
+      await salvarQrCode(
+        clienteServico,
+        null,
+        "close"
+      );
 
-    return NextResponse.json({
-      ok: true,
-      cliente,
-      servicosCliente: servicosComEvolution,
-      pagamentos,
-      catalogo,
-    });
-  } catch (error: any) {
-    console.log("ERRO CLIENTE DADOS:", error.message);
+      return NextResponse.json({
+        ok: true,
+      });
+    }
 
     return NextResponse.json(
       {
-        error: "Erro ao carregar dados do cliente",
-        detalhe: error.message,
+        error: "Ação inválida",
+      },
+      { status: 400 }
+    );
+  } catch (error: any) {
+    console.log(
+      "ERRO EVOLUTION:",
+      error.response?.data ||
+        error.message
+    );
+
+    return NextResponse.json(
+      {
+        error:
+          "Erro ao controlar WhatsApp",
+        detalhe:
+          error.response?.data ||
+          error.message,
       },
       { status: 500 }
     );
