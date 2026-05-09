@@ -25,16 +25,16 @@ export default function LoginPremium() {
 
     try {
 const res = await fetch("/api/cliente/login", {
+  method: "POST",
   credentials: "include",
-        headers: {
-          "Content-Type":
-            "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          senha,
-        }),
-      });
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    email,
+    senha,
+  }),
+});
 
       const data = await res.json();
 
