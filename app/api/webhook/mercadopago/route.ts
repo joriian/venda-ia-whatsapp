@@ -49,25 +49,38 @@ function somarMeses(dataBase: Date, meses: number) {
 function calcularNovaExpiracao(dataAtual: any, meses: number) {
   const agora = new Date();
   const expiraAtual = dataAtual ? new Date(dataAtual) : null;
-  const base = expiraAtual && expiraAtual > agora ? expiraAtual : agora;
+
+  const base =
+    expiraAtual && expiraAtual > agora
+      ? expiraAtual
+      : agora;
+
   return somarMeses(base, meses);
 }
 
 function extrairPaymentId(body: any) {
-  if (body?.data?.id) return String(body.data.id);
+  if (body?.data?.id) {
+    return String(body.data.id);
+  }
 
   if (body?.type === "payment" && body?.resource) {
-    return String(body.resource).split("/").pop();
+    return String(body.resource)
+      .split("/")
+      .pop();
   }
 
   if (body?.topic === "payment" && body?.resource) {
-    return String(body.resource).split("/").pop();
+    return String(body.resource)
+      .split("/")
+      .pop();
   }
 
   return null;
 }
 
-async function buscarPagamentoMercadoPago(paymentId: string) {
+async function buscarPagamentoMercadoPago(
+  paymentId: string
+) {
   const response = await axios.get(
     `https://api.mercadopago.com/v1/payments/${paymentId}`,
     {
@@ -80,18 +93,25 @@ async function buscarPagamentoMercadoPago(paymentId: string) {
   return response.data;
 }
 
-async function buscarOuCriarCliente(payment: MpPayment) {
+async function buscarOuCriarCliente(
+  payment: MpPayment
+) {
   const metadata = payment?.metadata || {};
-  const clienteId = metadata.cliente_id;
+
+  const clienteId =
+    metadata.cliente_id || null;
 
   if (clienteId) {
-    const { data: cliente } = await supabase
-      .from("clientes_ia_whatsapp")
-      .select("*")
-      .eq("id", clienteId)
-      .maybeSingle();
+    const { data: cliente } =
+      await supabase
+        .from("clientes_ia_whatsapp")
+        .select("*")
+        .eq("id", clienteId)
+        .maybeSingle();
 
-    if (cliente) return cliente;
+    if (cliente) {
+      return cliente;
+    }
   }
 
   const email =
@@ -101,42 +121,100 @@ async function buscarOuCriarCliente(payment: MpPayment) {
     null;
 
   if (email) {
-    const { data: clientePorEmail } = await supabase
-      .from("clientes_ia_whatsapp")
-      .select("*")
-      .eq("email", email)
-      .maybeSingle();
+    const { data: clienteEmail } =
+      await supabase
+        .from("clientes_ia_whatsapp")
+        .select("*")
+        .ilike("email", email)
+        .order("criado_em", {
+          ascending: false,
+        })
+        .limit(1)
+        .maybeSingle();
 
-    if (clientePorEmail) return clientePorEmail;
+    if (clienteEmail) {
+      return clienteEmail;
+    }
+  }
+
+  const telefone =
+    metadata.telefone ||
+    payment?.payer?.phone?.number ||
+    payment?.additional_info?.payer?.phone?.number ||
+    null;
+
+  if (telefone) {
+    const telefoneLimpo = String(
+      telefone
+    ).replace(/\D/g, "");
+
+    const { data: clienteTelefone } =
+      await supabase
+        .from("clientes_ia_whatsapp")
+        .select("*")
+        .ilike(
+          "telefone",
+          `%${telefoneLimpo}%`
+        )
+        .order("criado_em", {
+          ascending: false,
+        })
+        .limit(1)
+        .maybeSingle();
+
+    if (clienteTelefone) {
+      return clienteTelefone;
+    }
   }
 
   const novoId = crypto.randomUUID();
 
-  const { data: novoCliente, error } = await supabase
-    .from("clientes_ia_whatsapp")
-    .insert({
-      id: novoId,
-      nome:
-        metadata.nome ||
-        payment?.payer?.first_name ||
-        payment?.additional_info?.payer?.first_name ||
-        "Cliente",
-      email: email || `cliente-${novoId}@sem-email.local`,
-      telefone: metadata.telefone || null,
-      status: "aguardando_pagamento",
-      plano_id: metadata.plano_id || null,
-      servico_id: metadata.servico_id || null,
-      criado_em: new Date().toISOString(),
-    })
-    .select("*")
-    .single();
+  const { data: novoCliente, error } =
+    await supabase
+      .from("clientes_ia_whatsapp")
+      .insert({
+        id: novoId,
 
-  if (error) throw new Error(`Erro ao criar cliente: ${error.message}`);
+        nome:
+          metadata.nome ||
+          payment?.payer?.first_name ||
+          payment?.additional_info?.payer?.first_name ||
+          "Cliente",
+
+        email:
+          email ||
+          `cliente-${novoId}@sem-email.local`,
+
+        telefone:
+          telefone || "Não informado",
+
+        status:
+          "aguardando_pagamento",
+
+        plano_id:
+          metadata.plano_id || null,
+
+        servico_id:
+          metadata.servico_id || null,
+
+        criado_em:
+          new Date().toISOString(),
+      })
+      .select("*")
+      .single();
+
+  if (error) {
+    throw new Error(
+      `Erro ao criar cliente: ${error.message}`
+    );
+  }
 
   return novoCliente;
 }
 
-async function buscarPlano(planoId: string | null) {
+async function buscarPlano(
+  planoId: string | null
+) {
   if (!planoId) return null;
 
   const { data } = await supabase
@@ -148,7 +226,10 @@ async function buscarPlano(planoId: string | null) {
   return data;
 }
 
-async function buscarServico(servicoId: string | null, plano: any) {
+async function buscarServico(
+  servicoId: string | null,
+  plano: any
+) {
   if (servicoId) {
     const { data } = await supabase
       .from("servicos_ia")
@@ -169,28 +250,41 @@ async function buscarServico(servicoId: string | null, plano: any) {
     if (data) return data;
   }
 
-  const { data: primeiroServico } = await supabase
-    .from("servicos_ia")
-    .select("*")
-    .eq("ativo", true)
-    .order("ordem", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+  const { data: primeiroServico } =
+    await supabase
+      .from("servicos_ia")
+      .select("*")
+      .eq("ativo", true)
+      .order("ordem", {
+        ascending: true,
+      })
+      .limit(1)
+      .maybeSingle();
 
   return primeiroServico;
 }
 
-async function registrarPagamento(params: {
-  clienteId: string;
-  payment: MpPayment;
-  planoId: string | null;
-  valorOriginal: number;
-  descontoValor: number;
-  cupomCodigo: string | null;
-}) {
-  const paymentId = String(params.payment.id);
-  const statusMp = normalizarStatusPagamento(params.payment.status);
-  const status = traduzirStatusPagamento(statusMp);
+async function registrarPagamento(
+  params: {
+    clienteId: string;
+    payment: MpPayment;
+    planoId: string | null;
+    valorOriginal: number;
+    descontoValor: number;
+    cupomCodigo: string | null;
+  }
+) {
+  const paymentId = String(
+    params.payment.id
+  );
+
+  const statusMp =
+    normalizarStatusPagamento(
+      params.payment.status
+    );
+
+  const status =
+    traduzirStatusPagamento(statusMp);
 
   const valor = Number(
     params.payment.transaction_amount ||
@@ -207,19 +301,24 @@ async function registrarPagamento(params: {
     valor,
     plano_id: params.planoId,
     cupom_codigo: params.cupomCodigo,
-    desconto_valor: params.descontoValor || 0,
-    valor_original: params.valorOriginal || valor,
+    desconto_valor:
+      params.descontoValor || 0,
+    valor_original:
+      params.valorOriginal || valor,
     criado_em:
       params.payment.date_approved ||
       params.payment.date_created ||
       new Date().toISOString(),
   };
 
-  const { data: existente } = await supabase
-    .from("pagamentos_ia_whatsapp")
-    .select("id")
-    .or(`payment_id.eq.${paymentId},mercado_pago_id.eq.${paymentId}`)
-    .maybeSingle();
+  const { data: existente } =
+    await supabase
+      .from("pagamentos_ia_whatsapp")
+      .select("id")
+      .or(
+        `payment_id.eq.${paymentId},mercado_pago_id.eq.${paymentId}`
+      )
+      .maybeSingle();
 
   if (existente?.id) {
     const { error } = await supabase
@@ -227,65 +326,108 @@ async function registrarPagamento(params: {
       .update(registro)
       .eq("id", existente.id);
 
-    if (error) throw new Error(`Erro ao atualizar pagamento: ${error.message}`);
+    if (error) {
+      throw new Error(
+        `Erro ao atualizar pagamento: ${error.message}`
+      );
+    }
+
     return existente.id;
   }
 
-  const { data, error } = await supabase
-    .from("pagamentos_ia_whatsapp")
-    .insert(registro)
-    .select("id")
-    .single();
+  const { data, error } =
+    await supabase
+      .from("pagamentos_ia_whatsapp")
+      .insert(registro)
+      .select("id")
+      .single();
 
-  if (error) throw new Error(`Erro ao registrar pagamento: ${error.message}`);
+  if (error) {
+    throw new Error(
+      `Erro ao registrar pagamento: ${error.message}`
+    );
+  }
 
   return data.id;
 }
 
-async function ativarOuRenovarServico(params: {
-  cliente: any;
-  servico: any;
-  plano: any;
-  meses: number;
-}) {
-  const { cliente, servico, plano } = params;
-  const meses = Number(params.meses || plano?.meses || 1);
+async function ativarOuRenovarServico(
+  params: {
+    cliente: any;
+    servico: any;
+    plano: any;
+    meses: number;
+  }
+) {
+  const {
+    cliente,
+    servico,
+    plano,
+  } = params;
 
-  const instanceName = gerarInstanceName(
-    cliente.id,
-    servico.slug || servico.nome || "servico"
+  const meses = Number(
+    params.meses ||
+      plano?.meses ||
+      1
   );
 
-  const { data: vinculoMesmoPlano } = await supabase
+  const instanceName =
+    gerarInstanceName(
+      cliente.id,
+      servico.slug ||
+        servico.nome ||
+        "servico"
+    );
+
+  const {
+    data: vinculoMesmoPlano,
+  } = await supabase
     .from("cliente_servicos")
     .select("*")
     .eq("cliente_id", cliente.id)
     .eq("servico_id", servico.id)
     .eq("plano_id", plano.id)
-    .in("status", ["ativo", "aguardando_pagamento", "vencido"])
-    .order("created_at", { ascending: false })
+    .in("status", [
+      "ativo",
+      "aguardando_pagamento",
+      "vencido",
+    ])
+    .order("created_at", {
+      ascending: false,
+    })
     .limit(1)
     .maybeSingle();
 
-  const novaExpiracao = calcularNovaExpiracao(
-    vinculoMesmoPlano?.data_expiracao || cliente.data_expiracao,
-    meses
-  );
+  const novaExpiracao =
+    calcularNovaExpiracao(
+      vinculoMesmoPlano?.data_expiracao ||
+        cliente.data_expiracao,
+      meses
+    );
 
-  const inicio = vinculoMesmoPlano?.data_inicio || new Date().toISOString();
+  const inicio =
+    vinculoMesmoPlano?.data_inicio ||
+    new Date().toISOString();
 
-  let clienteServicoId = vinculoMesmoPlano?.id || null;
+  let clienteServicoId =
+    vinculoMesmoPlano?.id || null;
 
   const payloadServico = {
     plano_id: plano.id,
     status: "ativo",
     data_inicio: inicio,
-    data_expiracao: novaExpiracao.toISOString(),
-    workflow_id: servico.workflow_id || null,
-    webhook_url: servico.webhook_url || null,
+    data_expiracao:
+      novaExpiracao.toISOString(),
+    workflow_id:
+      servico.workflow_id || null,
+    webhook_url:
+      servico.webhook_url || null,
     instance_name: instanceName,
-    evolution_status: vinculoMesmoPlano?.evolution_status || "connecting",
-    updated_at: new Date().toISOString(),
+    evolution_status:
+      vinculoMesmoPlano?.evolution_status ||
+      "connecting",
+    updated_at:
+      new Date().toISOString(),
   };
 
   if (vinculoMesmoPlano?.id) {
@@ -294,40 +436,58 @@ async function ativarOuRenovarServico(params: {
       .update(payloadServico)
       .eq("id", vinculoMesmoPlano.id);
 
-    if (error) throw new Error(`Erro ao renovar serviço: ${error.message}`);
+    if (error) {
+      throw new Error(
+        `Erro ao renovar serviço: ${error.message}`
+      );
+    }
   } else {
-    const { data: novoVinculo, error } = await supabase
+    const {
+      data: novoVinculo,
+      error,
+    } = await supabase
       .from("cliente_servicos")
       .insert({
         cliente_id: cliente.id,
         servico_id: servico.id,
         ...payloadServico,
         evolution_configurado: false,
-        created_at: new Date().toISOString(),
+        created_at:
+          new Date().toISOString(),
       })
       .select("*")
       .single();
 
     if (error) {
-      throw new Error(`Erro ao ativar novo plano do serviço: ${error.message}`);
+      throw new Error(
+        `Erro ao ativar novo plano do serviço: ${error.message}`
+      );
     }
 
-    clienteServicoId = novoVinculo.id;
+    clienteServicoId =
+      novoVinculo.id;
   }
 
-  const { error: clienteError } = await supabase
+  const {
+    error: clienteError,
+  } = await supabase
     .from("clientes_ia_whatsapp")
     .update({
       plano_id: plano.id,
       servico_id: servico.id,
       status: "ativo",
-      data_inicio: cliente.data_inicio || inicio,
-      data_expiracao: novaExpiracao.toISOString(),
+      data_inicio:
+        cliente.data_inicio ||
+        inicio,
+      data_expiracao:
+        novaExpiracao.toISOString(),
     })
     .eq("id", cliente.id);
 
   if (clienteError) {
-    throw new Error(`Erro ao atualizar cliente: ${clienteError.message}`);
+    throw new Error(
+      `Erro ao atualizar cliente: ${clienteError.message}`
+    );
   }
 
   return {
@@ -343,123 +503,202 @@ async function marcarAguardandoPagamento(
 ) {
   await supabase
     .from("clientes_ia_whatsapp")
-    .update({ status: "aguardando_pagamento" })
+    .update({
+      status:
+        "aguardando_pagamento",
+    })
     .eq("id", clienteId);
 
   if (servicoId) {
     await supabase
       .from("cliente_servicos")
       .update({
-        status: "aguardando_pagamento",
-        updated_at: new Date().toISOString(),
+        status:
+          "aguardando_pagamento",
+        updated_at:
+          new Date().toISOString(),
       })
       .eq("cliente_id", clienteId)
       .eq("servico_id", servicoId);
   }
 }
 
-function normalizarEventosEvolution(servico: any) {
-  const eventos = servico?.evolution_events;
+function normalizarEventosEvolution(
+  servico: any
+) {
+  const eventos =
+    servico?.evolution_events;
 
-  if (Array.isArray(eventos) && eventos.length > 0) {
-    return eventos.map((e) => String(e).toUpperCase());
+  if (
+    Array.isArray(eventos) &&
+    eventos.length > 0
+  ) {
+    return eventos.map((e) =>
+      String(e).toUpperCase()
+    );
   }
 
-  return ["MESSAGES_UPSERT", "CONNECTION_UPDATE"];
+  return [
+    "MESSAGES_UPSERT",
+    "CONNECTION_UPDATE",
+  ];
 }
 
-async function configurarEvolutionDoServico(params: {
-  cliente: any;
-  servico: any;
-  clienteServicoId: string | null;
-  instanceName: string;
-}) {
-  const { cliente, servico, clienteServicoId, instanceName } = params;
+async function configurarEvolutionDoServico(
+  params: {
+    cliente: any;
+    servico: any;
+    clienteServicoId: string | null;
+    instanceName: string;
+  }
+) {
+  const {
+    cliente,
+    servico,
+    clienteServicoId,
+    instanceName,
+  } = params;
 
-  const webhookUrl = servico.webhook_url || process.env.DEFAULT_N8N_WEBHOOK_URL;
+  const webhookUrl =
+    servico.webhook_url ||
+    process.env
+      .DEFAULT_N8N_WEBHOOK_URL;
 
   if (!webhookUrl) {
-    console.log("WEBHOOK DO SERVIÇO NÃO CONFIGURADO:", servico.id);
-
     return {
       ok: false,
       motivo:
-        "webhook_url ausente no serviço e DEFAULT_N8N_WEBHOOK_URL não configurado",
+        "Webhook não configurado",
     };
   }
 
-  const configuracao = await configurarInstanciaCompleta({
-    clienteId: cliente.id,
-    servicoSlug: servico.slug || servico.nome || "servico",
-    webhookUrl,
-    events: normalizarEventosEvolution(servico),
-    webhookEnabled: servico.evolution_webhook_enabled ?? true,
-    webhookBase64: servico.evolution_webhook_base64 ?? true,
-  });
+  const configuracao =
+    await configurarInstanciaCompleta({
+      clienteId: cliente.id,
+      servicoSlug:
+        servico.slug ||
+        servico.nome ||
+        "servico",
+      webhookUrl,
+      events:
+        normalizarEventosEvolution(
+          servico
+        ),
+      webhookEnabled:
+        servico.evolution_webhook_enabled ??
+        true,
+      webhookBase64:
+        servico.evolution_webhook_base64 ??
+        true,
+    });
 
-  const finalInstanceName = configuracao.instanceName || instanceName;
+  const finalInstanceName =
+    configuracao.instanceName ||
+    instanceName;
 
   await supabase
     .from("cliente_servicos")
     .update({
-      workflow_id: servico.workflow_id || null,
+      workflow_id:
+        servico.workflow_id || null,
       webhook_url: webhookUrl,
-      instance_name: finalInstanceName,
+      instance_name:
+        finalInstanceName,
       evolution_configurado: true,
-      evolution_configurado_em: new Date().toISOString(),
-      evolution_status: "connecting",
-      updated_at: new Date().toISOString(),
+      evolution_configurado_em:
+        new Date().toISOString(),
+      evolution_status:
+        "connecting",
+      updated_at:
+        new Date().toISOString(),
     })
     .eq("cliente_id", cliente.id)
     .eq("servico_id", servico.id);
 
-  await supabase.from("instancias_evolution").upsert(
-    {
-      cliente_id: cliente.id,
-      servico_id: servico.id,
-      cliente_servico_id: clienteServicoId,
-      instance_name: finalInstanceName,
-      webhook_url: webhookUrl,
-      workflow_id: servico.workflow_id || null,
-      servico_nome: servico.nome || null,
-      status: "connecting",
-      updated_at: new Date().toISOString(),
-    },
-    {
-      onConflict: "cliente_id,servico_id",
-    }
-  );
+  await supabase
+    .from("instancias_evolution")
+    .upsert(
+      {
+        cliente_id: cliente.id,
+        servico_id: servico.id,
+        cliente_servico_id:
+          clienteServicoId,
+        instance_name:
+          finalInstanceName,
+        webhook_url: webhookUrl,
+        workflow_id:
+          servico.workflow_id || null,
+        servico_nome:
+          servico.nome || null,
+        status: "connecting",
+        updated_at:
+          new Date().toISOString(),
+      },
+      {
+        onConflict:
+          "cliente_id,servico_id",
+      }
+    );
 
   return {
     ...configuracao,
-    instanceName: finalInstanceName,
+    instanceName:
+      finalInstanceName,
   };
 }
 
-export async function POST(req: Request) {
+export async function POST(
+  req: Request
+) {
   try {
     const body = await req.json();
 
-    console.log("WEBHOOK MERCADO PAGO:", body);
+    console.log(
+      "WEBHOOK MERCADO PAGO:",
+      body
+    );
 
-    const paymentId = extrairPaymentId(body);
+    const paymentId =
+      extrairPaymentId(body);
 
     if (!paymentId) {
       return NextResponse.json({
         ok: true,
-        ignorado: "Evento sem ID de pagamento",
+        ignorado:
+          "Evento sem ID de pagamento",
       });
     }
 
-    const payment = await buscarPagamentoMercadoPago(paymentId);
-    const statusPagamento = normalizarStatusPagamento(payment.status);
-    const statusPagamentoPt = traduzirStatusPagamento(statusPagamento);
-    const metadata = payment.metadata || {};
+    const payment =
+      await buscarPagamentoMercadoPago(
+        paymentId
+      );
 
-    const cliente = await buscarOuCriarCliente(payment);
+    const statusPagamento =
+      normalizarStatusPagamento(
+        payment.status
+      );
 
-    const planoId = metadata.plano_id || cliente.plano_id || null;
-    const plano = await buscarPlano(planoId);
+    const statusPagamentoPt =
+      traduzirStatusPagamento(
+        statusPagamento
+      );
+
+    const metadata =
+      payment.metadata || {};
+
+    const cliente =
+      await buscarOuCriarCliente(
+        payment
+      );
+
+    const planoId =
+      metadata.plano_id ||
+      cliente.plano_id ||
+      null;
+
+    const plano =
+      await buscarPlano(planoId);
 
     if (!plano) {
       await registrarPagamento({
@@ -467,23 +706,39 @@ export async function POST(req: Request) {
         payment,
         planoId,
         valorOriginal: Number(
-          metadata.valor_original || payment.transaction_amount || 0
+          metadata.valor_original ||
+            payment.transaction_amount ||
+            0
         ),
-        descontoValor: Number(metadata.desconto_valor || 0),
-        cupomCodigo: metadata.cupom_codigo || null,
+        descontoValor: Number(
+          metadata.desconto_valor ||
+            0
+        ),
+        cupomCodigo:
+          metadata.cupom_codigo ||
+          null,
       });
 
       return NextResponse.json({
         ok: true,
-        aviso: "Pagamento registrado, mas plano não encontrado",
-        status: statusPagamentoPt,
+        aviso:
+          "Pagamento registrado, mas plano não encontrado",
+        status:
+          statusPagamentoPt,
       });
     }
 
     const servicoId =
-      metadata.servico_id || cliente.servico_id || plano.servico_id || null;
+      metadata.servico_id ||
+      cliente.servico_id ||
+      plano.servico_id ||
+      null;
 
-    const servico = await buscarServico(servicoId, plano);
+    const servico =
+      await buscarServico(
+        servicoId,
+        plano
+      );
 
     if (!servico) {
       await registrarPagamento({
@@ -496,14 +751,21 @@ export async function POST(req: Request) {
             payment.transaction_amount ||
             0
         ),
-        descontoValor: Number(metadata.desconto_valor || 0),
-        cupomCodigo: metadata.cupom_codigo || null,
+        descontoValor: Number(
+          metadata.desconto_valor ||
+            0
+        ),
+        cupomCodigo:
+          metadata.cupom_codigo ||
+          null,
       });
 
       return NextResponse.json({
         ok: true,
-        aviso: "Pagamento registrado, mas serviço não encontrado",
-        status: statusPagamentoPt,
+        aviso:
+          "Pagamento registrado, mas serviço não encontrado",
+        status:
+          statusPagamentoPt,
       });
     }
 
@@ -512,55 +774,83 @@ export async function POST(req: Request) {
       payment,
       planoId: plano.id,
       valorOriginal: Number(
-        metadata.valor_original || plano.valor || payment.transaction_amount || 0
+        metadata.valor_original ||
+          plano.valor ||
+          payment.transaction_amount ||
+          0
       ),
-      descontoValor: Number(metadata.desconto_valor || 0),
-      cupomCodigo: metadata.cupom_codigo || null,
+      descontoValor: Number(
+        metadata.desconto_valor ||
+          0
+      ),
+      cupomCodigo:
+        metadata.cupom_codigo ||
+        null,
     });
 
-    if (statusPagamento !== "approved") {
-      await marcarAguardandoPagamento(cliente.id, servico.id);
+    if (
+      statusPagamento !==
+      "approved"
+    ) {
+      await marcarAguardandoPagamento(
+        cliente.id,
+        servico.id
+      );
 
       return NextResponse.json({
         ok: true,
-        status: statusPagamentoPt,
-        acao: "pagamento_nao_aprovado",
+        status:
+          statusPagamentoPt,
+        acao:
+          "pagamento_nao_aprovado",
       });
     }
 
-    const ativacao = await ativarOuRenovarServico({
-      cliente,
-      servico,
-      plano,
-      meses: Number(metadata.meses || plano.meses || 1),
-    });
+    const ativacao =
+      await ativarOuRenovarServico({
+        cliente,
+        servico,
+        plano,
+        meses: Number(
+          metadata.meses ||
+            plano.meses ||
+            1
+        ),
+      });
 
     let instancia: any = null;
 
     try {
-      instancia = await configurarEvolutionDoServico({
-        cliente,
-        servico,
-        clienteServicoId: ativacao.clienteServicoId,
-        instanceName: ativacao.instanceName,
-      });
+      instancia =
+        await configurarEvolutionDoServico(
+          {
+            cliente,
+            servico,
+            clienteServicoId:
+              ativacao.clienteServicoId,
+            instanceName:
+              ativacao.instanceName,
+          }
+        );
     } catch (error: any) {
-      console.log(
-        "ERRO AO CONFIGURAR EVOLUTION:",
-        error.response?.data || error.message
-      );
-
       instancia = {
         ok: false,
-        erro: error.response?.data || error.message,
+        erro:
+          error.response?.data ||
+          error.message,
       };
     }
 
-    if (ativacao.clienteServicoId) {
-      await notificarPagamentoAprovado({
-        cliente_id: cliente.id,
-        cliente_servico_id: ativacao.clienteServicoId,
-      });
+    if (
+      ativacao.clienteServicoId
+    ) {
+      await notificarPagamentoAprovado(
+        {
+          cliente_id: cliente.id,
+          cliente_servico_id:
+            ativacao.clienteServicoId,
+        }
+      );
     }
 
     return NextResponse.json({
@@ -569,18 +859,28 @@ export async function POST(req: Request) {
       cliente_id: cliente.id,
       servico_id: servico.id,
       plano_id: plano.id,
-      cliente_servico_id: ativacao.clienteServicoId,
-      instance_name: ativacao.instanceName,
-      data_expiracao: ativacao.novaExpiracao.toISOString(),
+      cliente_servico_id:
+        ativacao.clienteServicoId,
+      instance_name:
+        ativacao.instanceName,
+      data_expiracao:
+        ativacao.novaExpiracao.toISOString(),
       instancia,
     });
   } catch (error: any) {
-    console.log("ERRO WEBHOOK MERCADO PAGO:", error.response?.data || error.message);
+    console.log(
+      "ERRO WEBHOOK MERCADO PAGO:",
+      error.response?.data ||
+        error.message
+    );
 
     return NextResponse.json(
       {
-        error: "Erro no webhook Mercado Pago",
-        detalhe: error.response?.data || error.message,
+        error:
+          "Erro no webhook Mercado Pago",
+        detalhe:
+          error.response?.data ||
+          error.message,
       },
       { status: 500 }
     );
@@ -590,6 +890,7 @@ export async function POST(req: Request) {
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    rota: "webhook mercado pago ativo",
+    rota:
+      "webhook mercado pago ativo",
   });
 }
