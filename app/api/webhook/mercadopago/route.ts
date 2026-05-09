@@ -20,9 +20,24 @@ function normalizarStatusPagamento(status: string) {
 
   if (s === "approved") return "approved";
   if (s === "pending" || s === "in_process") return "pending";
-  if (s === "rejected" || s === "cancelled" || s === "refunded") return "rejected";
+  if (s === "rejected") return "rejected";
+  if (s === "cancelled") return "cancelled";
+  if (s === "refunded") return "refunded";
 
   return s || "pending";
+}
+
+function traduzirStatusPagamento(status: string) {
+  const s = String(status || "").toLowerCase();
+
+  if (s === "approved") return "aprovado";
+  if (s === "pending") return "pendente";
+  if (s === "in_process") return "em_processamento";
+  if (s === "rejected") return "recusado";
+  if (s === "cancelled") return "cancelado";
+  if (s === "refunded") return "reembolsado";
+
+  return "pendente";
 }
 
 function somarMeses(dataBase: Date, meses: number) {
@@ -174,9 +189,13 @@ async function registrarPagamento(params: {
   cupomCodigo: string | null;
 }) {
   const paymentId = String(params.payment.id);
-  const status = normalizarStatusPagamento(params.payment.status);
+  const statusMp = normalizarStatusPagamento(params.payment.status);
+  const status = traduzirStatusPagamento(statusMp);
+
   const valor = Number(
-    params.payment.transaction_amount || params.payment.total_paid_amount || 0
+    params.payment.transaction_amount ||
+      params.payment.total_paid_amount ||
+      0
   );
 
   const registro = {
@@ -184,6 +203,7 @@ async function registrarPagamento(params: {
     mercado_pago_id: paymentId,
     payment_id: paymentId,
     status,
+    status_mp: statusMp,
     valor,
     plano_id: params.planoId,
     cupom_codigo: params.cupomCodigo,
@@ -231,7 +251,10 @@ async function ativarOuRenovarServico(params: {
   const { cliente, servico, plano } = params;
   const meses = Number(params.meses || plano?.meses || 1);
 
-  const instanceName = gerarInstanceName(cliente.id, servico.slug || servico.nome || "servico");
+  const instanceName = gerarInstanceName(
+    cliente.id,
+    servico.slug || servico.nome || "servico"
+  );
 
   const { data: vinculoMesmoPlano } = await supabase
     .from("cliente_servicos")
@@ -314,7 +337,10 @@ async function ativarOuRenovarServico(params: {
   };
 }
 
-async function marcarAguardandoPagamento(clienteId: string, servicoId?: string | null) {
+async function marcarAguardandoPagamento(
+  clienteId: string,
+  servicoId?: string | null
+) {
   await supabase
     .from("clientes_ia_whatsapp")
     .update({ status: "aguardando_pagamento" })
@@ -354,9 +380,11 @@ async function configurarEvolutionDoServico(params: {
 
   if (!webhookUrl) {
     console.log("WEBHOOK DO SERVIÇO NÃO CONFIGURADO:", servico.id);
+
     return {
       ok: false,
-      motivo: "webhook_url ausente no serviço e DEFAULT_N8N_WEBHOOK_URL não configurado",
+      motivo:
+        "webhook_url ausente no serviço e DEFAULT_N8N_WEBHOOK_URL não configurado",
     };
   }
 
@@ -412,16 +440,20 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    console.log("WEBHOOK MP:", body);
+    console.log("WEBHOOK MERCADO PAGO:", body);
 
     const paymentId = extrairPaymentId(body);
 
     if (!paymentId) {
-      return NextResponse.json({ ok: true, ignored: "Evento sem payment id" });
+      return NextResponse.json({
+        ok: true,
+        ignorado: "Evento sem ID de pagamento",
+      });
     }
 
     const payment = await buscarPagamentoMercadoPago(paymentId);
     const statusPagamento = normalizarStatusPagamento(payment.status);
+    const statusPagamentoPt = traduzirStatusPagamento(statusPagamento);
     const metadata = payment.metadata || {};
 
     const cliente = await buscarOuCriarCliente(payment);
@@ -434,18 +466,23 @@ export async function POST(req: Request) {
         clienteId: cliente.id,
         payment,
         planoId,
-        valorOriginal: Number(metadata.valor_original || payment.transaction_amount || 0),
+        valorOriginal: Number(
+          metadata.valor_original || payment.transaction_amount || 0
+        ),
         descontoValor: Number(metadata.desconto_valor || 0),
         cupomCodigo: metadata.cupom_codigo || null,
       });
 
       return NextResponse.json({
         ok: true,
-        warning: "Pagamento registrado, mas plano não encontrado",
+        aviso: "Pagamento registrado, mas plano não encontrado",
+        status: statusPagamentoPt,
       });
     }
 
-    const servicoId = metadata.servico_id || cliente.servico_id || plano.servico_id || null;
+    const servicoId =
+      metadata.servico_id || cliente.servico_id || plano.servico_id || null;
+
     const servico = await buscarServico(servicoId, plano);
 
     if (!servico) {
@@ -453,14 +490,20 @@ export async function POST(req: Request) {
         clienteId: cliente.id,
         payment,
         planoId: plano.id,
-        valorOriginal: Number(metadata.valor_original || plano.valor || payment.transaction_amount || 0),
+        valorOriginal: Number(
+          metadata.valor_original ||
+            plano.valor ||
+            payment.transaction_amount ||
+            0
+        ),
         descontoValor: Number(metadata.desconto_valor || 0),
         cupomCodigo: metadata.cupom_codigo || null,
       });
 
       return NextResponse.json({
         ok: true,
-        warning: "Pagamento registrado, mas serviço não encontrado",
+        aviso: "Pagamento registrado, mas serviço não encontrado",
+        status: statusPagamentoPt,
       });
     }
 
@@ -468,7 +511,9 @@ export async function POST(req: Request) {
       clienteId: cliente.id,
       payment,
       planoId: plano.id,
-      valorOriginal: Number(metadata.valor_original || plano.valor || payment.transaction_amount || 0),
+      valorOriginal: Number(
+        metadata.valor_original || plano.valor || payment.transaction_amount || 0
+      ),
       descontoValor: Number(metadata.desconto_valor || 0),
       cupomCodigo: metadata.cupom_codigo || null,
     });
@@ -478,8 +523,8 @@ export async function POST(req: Request) {
 
       return NextResponse.json({
         ok: true,
-        status: statusPagamento,
-        action: "pagamento_nao_aprovado",
+        status: statusPagamentoPt,
+        acao: "pagamento_nao_aprovado",
       });
     }
 
@@ -501,7 +546,7 @@ export async function POST(req: Request) {
       });
     } catch (error: any) {
       console.log(
-        "ERRO CONFIGURAR EVOLUTION:",
+        "ERRO AO CONFIGURAR EVOLUTION:",
         error.response?.data || error.message
       );
 
@@ -520,7 +565,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      status: statusPagamento,
+      status: "aprovado",
       cliente_id: cliente.id,
       servico_id: servico.id,
       plano_id: plano.id,
@@ -530,7 +575,7 @@ export async function POST(req: Request) {
       instancia,
     });
   } catch (error: any) {
-    console.log("ERRO WEBHOOK MP:", error.response?.data || error.message);
+    console.log("ERRO WEBHOOK MERCADO PAGO:", error.response?.data || error.message);
 
     return NextResponse.json(
       {
@@ -545,6 +590,6 @@ export async function POST(req: Request) {
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    route: "webhook mercadopago ativo",
+    rota: "webhook mercado pago ativo",
   });
 }
