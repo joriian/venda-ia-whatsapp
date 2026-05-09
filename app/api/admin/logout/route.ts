@@ -8,7 +8,20 @@ const supabase = createClient(
 
 export async function POST(req: Request) {
   try {
-    const { token } = await req.json();
+    let token = "";
+
+    try {
+      const body = await req.json();
+      token = body?.token || "";
+    } catch {
+      token = "";
+    }
+
+    if (!token) {
+      const cookieHeader = req.headers.get("cookie") || "";
+      const match = cookieHeader.match(/adminToken=([^;]+)/);
+      token = match?.[1] || "";
+    }
 
     if (token) {
       await supabase
@@ -20,8 +33,28 @@ export async function POST(req: Request) {
         .eq("session_token", token);
     }
 
-    return NextResponse.json({ ok: true });
+    const response = NextResponse.json({ ok: true });
+
+    response.cookies.set("adminToken", "", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 0,
+    });
+
+    return response;
   } catch {
-    return NextResponse.json({ ok: true });
+    const response = NextResponse.json({ ok: true });
+
+    response.cookies.set("adminToken", "", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 0,
+    });
+
+    return response;
   }
 }
