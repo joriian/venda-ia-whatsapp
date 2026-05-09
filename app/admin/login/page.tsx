@@ -16,7 +16,11 @@ export default function AdminLoginPage() {
     setLoading(true);
 
     try {
-      localStorage.clear();
+      localStorage.removeItem("adminToken");
+      localStorage.removeItem("adminNome");
+      localStorage.removeItem("adminEmail");
+      localStorage.removeItem("adminNivel");
+      localStorage.removeItem("adminSessaoExpira");
 
       const res = await fetch("/api/admin/login", {
         method: "POST",
@@ -37,11 +41,13 @@ export default function AdminLoginPage() {
         return;
       }
 
+      localStorage.setItem("adminToken", data.token || "");
       localStorage.setItem("adminNome", data.admin?.nome || "");
       localStorage.setItem("adminEmail", data.admin?.email || "");
       localStorage.setItem("adminNivel", data.admin?.nivel || "");
+      localStorage.setItem("adminSessaoExpira", data.expiresAt || "");
 
-      window.location.replace("/admin");
+      window.location.href = "/admin";
     } catch (error) {
       console.log(error);
       alert("Erro ao fazer login");
@@ -53,9 +59,7 @@ export default function AdminLoginPage() {
   return (
     <main className="min-h-screen bg-black text-white flex items-center justify-center px-6">
       <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-8 w-full max-w-sm">
-        <h1 className="text-2xl font-bold mb-2">
-          Login Admin
-        </h1>
+        <h1 className="text-2xl font-bold mb-2">Login Admin</h1>
 
         <p className="text-gray-400 text-sm mb-6">
           Acesse o painel administrativo.
@@ -75,9 +79,7 @@ export default function AdminLoginPage() {
           value={senha}
           onChange={(e) => setSenha(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              entrar();
-            }
+            if (e.key === "Enter") entrar();
           }}
           className="w-full p-3 rounded bg-zinc-800 border border-zinc-700 mb-5"
         />
