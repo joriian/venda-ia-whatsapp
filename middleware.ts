@@ -4,26 +4,36 @@ import type { NextRequest } from "next/server";
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // LIBERA LOGIN ADMIN
+  const adminToken = req.cookies.get("adminToken")?.value || "";
+  const clienteToken = req.cookies.get("clienteToken")?.value || "";
+
   if (pathname === "/admin/login") {
     return NextResponse.next();
   }
 
-  // PROTEGE ADMIN
   if (pathname.startsWith("/admin")) {
-    const adminToken =
-      req.cookies.get("adminToken")?.value || "";
-
     if (!adminToken) {
-      return NextResponse.redirect(
-        new URL("/admin/login", req.url)
-      );
+      return NextResponse.redirect(new URL("/admin/login", req.url));
     }
+
+    return NextResponse.next();
+  }
+
+  if (pathname === "/login") {
+    return NextResponse.next();
+  }
+
+  if (pathname.startsWith("/cliente")) {
+    if (!clienteToken) {
+      return NextResponse.redirect(new URL("/login", req.url));
+    }
+
+    return NextResponse.next();
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/admin/:path*"],
+  matcher: ["/admin/:path*", "/cliente/:path*", "/login"],
 };
