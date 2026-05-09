@@ -73,8 +73,6 @@ export default function AdminCatalogo({
   planos,
   salvarServico,
   salvarPlano,
-  editarServico,
-  editarPlano,
   excluirServico,
   excluirPlano,
 }: Props) {
@@ -124,6 +122,7 @@ export default function AdminCatalogo({
           }
         : null
     );
+
     setModalPlanoAberto(true);
   }
 
@@ -146,27 +145,29 @@ export default function AdminCatalogo({
 
   return (
     <div className="space-y-6">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
+      <div className="bg-[#0D0D0D] border border-white/10 rounded-3xl p-6">
         <div className="flex flex-col xl:flex-row gap-4 xl:items-center xl:justify-between">
           <div>
-            <h2 className="text-2xl font-bold">Serviços e automações</h2>
+            <h2 className="text-3xl font-black">
+              Serviços e Planos
+            </h2>
 
-            <p className="text-gray-400 text-sm mt-1">
-              Gerencie serviços, workflows n8n, webhooks e eventos da Evolution.
+            <p className="text-gray-500 mt-2">
+              Gerencie serviços, workflows n8n, webhooks, eventos da Evolution e planos.
             </p>
           </div>
 
           <div className="flex gap-3 flex-wrap">
             <button
               onClick={abrirNovoServico}
-              className="bg-purple-600 hover:bg-purple-700 px-5 py-3 rounded-2xl font-bold"
+              className="bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 px-5 py-3 rounded-2xl font-bold transition-all"
             >
               Novo serviço
             </button>
 
             <button
               onClick={() => abrirNovoPlano()}
-              className="bg-green-600 hover:bg-green-700 px-5 py-3 rounded-2xl font-bold"
+              className="bg-green-500/20 text-green-400 hover:bg-green-500/30 px-5 py-3 rounded-2xl font-bold transition-all"
             >
               Novo plano
             </button>
@@ -177,27 +178,31 @@ export default function AdminCatalogo({
           <input
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
-            placeholder="Pesquisar serviço, workflow, webhook..."
-            className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3"
+            placeholder="Pesquisar serviço, workflow ou webhook..."
+            className="w-full bg-[#131313] border border-white/10 rounded-2xl px-5 py-4 outline-none focus:border-green-500 transition-all"
           />
         </div>
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
-        <h3 className="text-lg font-bold mb-3">O que são eventos da Evolution?</h3>
+      <div className="bg-[#0D0D0D] border border-white/10 rounded-3xl p-6">
+        <h3 className="text-xl font-black mb-4">
+          Eventos principais da Evolution
+        </h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
           <InfoBox
             titulo="MESSAGES_UPSERT"
-            texto="Dispara quando chega mensagem nova. É o principal para suas IAs."
+            texto="Dispara quando chega uma mensagem nova. É o principal para suas IAs."
           />
+
           <InfoBox
             titulo="CONNECTION_UPDATE"
-            texto="Dispara quando o WhatsApp conecta, desconecta ou muda estado."
+            texto="Dispara quando o WhatsApp conecta, desconecta ou muda de estado."
           />
+
           <InfoBox
             titulo="QRCODE_UPDATED"
-            texto="Dispara quando o QR Code muda. Útil para painel do cliente."
+            texto="Dispara quando o QR Code muda. Útil para atualizar o painel do cliente."
           />
         </div>
       </div>
@@ -211,13 +216,15 @@ export default function AdminCatalogo({
           return (
             <div
               key={servico.id}
-              className="bg-zinc-900 border border-zinc-700 rounded-3xl overflow-hidden"
+              className="bg-[#0D0D0D] border border-white/10 rounded-3xl overflow-hidden"
             >
-              <div className="p-5 border-b border-zinc-800">
+              <div className="p-6 border-b border-white/5">
                 <div className="flex flex-col 2xl:flex-row gap-5 2xl:items-start 2xl:justify-between">
                   <div className="flex-1">
                     <div className="flex flex-wrap items-center gap-3 mb-3">
-                      <h3 className="text-2xl font-bold">{servico.nome}</h3>
+                      <h3 className="text-2xl font-black">
+                        {servico.nome}
+                      </h3>
 
                       <span
                         className={`px-3 py-1 rounded-full text-xs font-bold ${
@@ -229,7 +236,7 @@ export default function AdminCatalogo({
                         {servico.ativo ? "ATIVO" : "INATIVO"}
                       </span>
 
-                      <span className="bg-zinc-800 px-3 py-1 rounded-full text-xs font-bold text-gray-300">
+                      <span className="bg-white/10 px-3 py-1 rounded-full text-xs font-bold text-gray-300">
                         {servico.workflow_tipo || "whatsapp"}
                       </span>
 
@@ -244,7 +251,7 @@ export default function AdminCatalogo({
                       )}
                     </div>
 
-                    <p className="text-gray-400 text-sm leading-relaxed">
+                    <p className="text-gray-500 text-sm leading-relaxed">
                       {servico.descricao || "Sem descrição"}
                     </p>
                   </div>
@@ -252,21 +259,21 @@ export default function AdminCatalogo({
                   <div className="flex gap-3 flex-wrap">
                     <button
                       onClick={() => abrirNovoPlano(servico.id)}
-                      className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-xl font-bold text-sm"
+                      className="bg-green-500/20 text-green-400 hover:bg-green-500/30 px-4 py-3 rounded-xl font-bold text-sm transition-all"
                     >
                       Novo plano
                     </button>
 
                     <button
                       onClick={() => abrirEditarServico(servico)}
-                      className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-xl font-bold text-sm"
+                      className="bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 px-4 py-3 rounded-xl font-bold text-sm transition-all"
                     >
                       Editar
                     </button>
 
                     <button
                       onClick={() => excluirServico(servico.id)}
-                      className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-xl font-bold text-sm"
+                      className="bg-red-500/20 text-red-400 hover:bg-red-500/30 px-4 py-3 rounded-xl font-bold text-sm transition-all"
                     >
                       Excluir
                     </button>
@@ -296,28 +303,38 @@ export default function AdminCatalogo({
                     }
                   />
 
-                  <div className="bg-zinc-800 rounded-2xl p-4 border border-zinc-700">
-                    <p className="text-gray-400 text-xs mb-1">Integração</p>
+                  <div className="bg-[#131313] rounded-2xl p-4 border border-white/10">
+                    <p className="text-gray-500 text-xs mb-1">
+                      Integração
+                    </p>
 
                     <div className="space-y-1 text-sm">
                       <p>
-                        Webhook: <strong>{servico.evolution_webhook_enabled ? "ON" : "OFF"}</strong>
+                        Webhook:{" "}
+                        <strong>
+                          {servico.evolution_webhook_enabled ? "ON" : "OFF"}
+                        </strong>
                       </p>
 
                       <p>
-                        Base64: <strong>{servico.evolution_webhook_base64 ? "ON" : "OFF"}</strong>
+                        Base64:{" "}
+                        <strong>
+                          {servico.evolution_webhook_base64 ? "ON" : "OFF"}
+                        </strong>
                       </p>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="p-5">
+              <div className="p-6">
                 <div className="flex items-center justify-between mb-5">
                   <div>
-                    <h4 className="text-lg font-bold">Planos do serviço</h4>
+                    <h4 className="text-xl font-black">
+                      Planos do serviço
+                    </h4>
 
-                    <p className="text-gray-400 text-sm">
+                    <p className="text-gray-500 text-sm mt-1">
                       {planosServico.length} plano(s)
                     </p>
                   </div>
@@ -329,45 +346,57 @@ export default function AdminCatalogo({
                       key={plano.id}
                       className={`rounded-3xl border p-5 relative overflow-hidden ${
                         plano.destaque
-                          ? "border-green-500 bg-green-500/10"
-                          : "border-zinc-700 bg-zinc-800"
+                          ? "border-green-500/20 bg-green-500/10"
+                          : "border-white/10 bg-[#131313]"
                       }`}
                     >
                       {plano.destaque && (
-                        <div className="absolute top-3 right-3 bg-green-500 text-black text-xs font-black px-3 py-1 rounded-full">
+                        <div className="absolute top-3 right-3 bg-green-500/20 text-green-400 text-xs font-black px-3 py-1 rounded-full">
                           DESTAQUE
                         </div>
                       )}
 
                       <div className="mb-4">
-                        <h5 className="text-xl font-bold">{plano.nome}</h5>
+                        <h5 className="text-xl font-black">
+                          {plano.nome}
+                        </h5>
 
-                        <p className="text-gray-400 text-sm mt-2">
+                        <p className="text-gray-500 text-sm mt-2">
                           {plano.descricao || "Sem descrição"}
                         </p>
                       </div>
 
                       <div className="mb-5">
-                        <p className="text-3xl font-black">
+                        <p className="text-3xl font-black text-green-400">
                           {moeda(plano.valor)}
                         </p>
 
-                        <p className="text-gray-400 text-sm mt-1">
+                        <p className="text-gray-500 text-sm mt-1">
                           {plano.meses} mês(es)
                         </p>
                       </div>
 
                       <div className="grid grid-cols-2 gap-3 text-sm mb-5">
-                        <div className="bg-zinc-900 rounded-xl p-3">
-                          <p className="text-gray-400 text-xs mb-1">Ordem</p>
-                          <p className="font-bold">{plano.ordem || 0}</p>
+                        <div className="bg-[#0D0D0D] rounded-xl p-3 border border-white/5">
+                          <p className="text-gray-500 text-xs mb-1">
+                            Ordem
+                          </p>
+
+                          <p className="font-bold">
+                            {plano.ordem || 0}
+                          </p>
                         </div>
 
-                        <div className="bg-zinc-900 rounded-xl p-3">
-                          <p className="text-gray-400 text-xs mb-1">Status</p>
+                        <div className="bg-[#0D0D0D] rounded-xl p-3 border border-white/5">
+                          <p className="text-gray-500 text-xs mb-1">
+                            Status
+                          </p>
+
                           <p
                             className={`font-bold ${
-                              plano.ativo ? "text-green-400" : "text-red-400"
+                              plano.ativo
+                                ? "text-green-400"
+                                : "text-red-400"
                             }`}
                           >
                             {plano.ativo ? "Ativo" : "Inativo"}
@@ -378,14 +407,14 @@ export default function AdminCatalogo({
                       <div className="flex gap-3">
                         <button
                           onClick={() => abrirEditarPlano(plano)}
-                          className="flex-1 bg-blue-600 hover:bg-blue-700 py-3 rounded-2xl font-bold"
+                          className="flex-1 bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 py-3 rounded-2xl font-bold transition-all"
                         >
                           Editar
                         </button>
 
                         <button
                           onClick={() => excluirPlano(plano.id)}
-                          className="flex-1 bg-red-600 hover:bg-red-700 py-3 rounded-2xl font-bold"
+                          className="flex-1 bg-red-500/20 text-red-400 hover:bg-red-500/30 py-3 rounded-2xl font-bold transition-all"
                         >
                           Excluir
                         </button>
@@ -394,7 +423,7 @@ export default function AdminCatalogo({
                   ))}
 
                   {planosServico.length === 0 && (
-                    <div className="bg-zinc-800 border border-zinc-700 rounded-3xl p-8 text-center text-gray-400">
+                    <div className="bg-[#131313] border border-white/10 rounded-3xl p-8 text-center text-gray-500">
                       Nenhum plano cadastrado.
                     </div>
                   )}
@@ -405,7 +434,7 @@ export default function AdminCatalogo({
         })}
 
         {servicosFiltrados.length === 0 && (
-          <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-10 text-center text-gray-400">
+          <div className="bg-[#0D0D0D] border border-white/10 rounded-3xl p-10 text-center text-gray-500">
             Nenhum serviço encontrado.
           </div>
         )}
@@ -433,8 +462,11 @@ export default function AdminCatalogo({
 
 function InfoBox({ titulo, texto, mono = false }: any) {
   return (
-    <div className="bg-zinc-800 rounded-2xl p-4 border border-zinc-700">
-      <p className="text-gray-400 text-xs mb-1">{titulo}</p>
+    <div className="bg-[#131313] rounded-2xl p-4 border border-white/10">
+      <p className="text-gray-500 text-xs mb-1">
+        {titulo}
+      </p>
+
       <p className={`${mono ? "font-mono" : ""} text-sm break-all`}>
         {texto || "-"}
       </p>
@@ -456,7 +488,8 @@ function ModalServico({ servico, fechar, salvar }: any) {
     evolution_webhook_enabled: servico?.evolution_webhook_enabled ?? true,
     evolution_webhook_base64: servico?.evolution_webhook_base64 ?? true,
     evolution_events:
-      Array.isArray(servico?.evolution_events) && servico.evolution_events.length > 0
+      Array.isArray(servico?.evolution_events) &&
+      servico.evolution_events.length > 0
         ? servico.evolution_events
         : ["MESSAGES_UPSERT", "CONNECTION_UPDATE"],
   });
@@ -515,7 +548,7 @@ function ModalServico({ servico, fechar, salvar }: any) {
       } else {
         alert(`Webhook respondeu com erro: ${res.status}`);
       }
-    } catch (error) {
+    } catch {
       alert("Não foi possível conectar ao webhook. Verifique a URL.");
     }
   }
@@ -534,35 +567,39 @@ function ModalServico({ servico, fechar, salvar }: any) {
     await salvar({
       acao: form.id ? "atualizar_servico" : "criar_servico",
       ...form,
-      evolution_events: form.evolution_events.map((e: string) => e.toUpperCase()),
+      evolution_events: form.evolution_events.map((e: string) =>
+        e.toUpperCase()
+      ),
     });
   }
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-zinc-950 border border-zinc-700 rounded-3xl w-full max-w-5xl p-6">
+      <div className="bg-[#090909] border border-white/10 rounded-3xl w-full max-w-5xl p-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
           <div>
-            <h2 className="text-2xl font-bold">
+            <h2 className="text-2xl font-black">
               {form.id ? "Editar serviço" : "Novo serviço"}
             </h2>
 
-            <p className="text-gray-400 text-sm mt-1">
+            <p className="text-gray-500 text-sm mt-1">
               Configure o serviço, o workflow do n8n e os eventos da Evolution.
             </p>
           </div>
 
           <button
             onClick={fechar}
-            className="bg-zinc-800 hover:bg-zinc-700 px-5 py-3 rounded-2xl font-bold"
+            className="bg-white/5 text-white hover:bg-white/10 px-5 py-3 rounded-2xl font-bold transition-all"
           >
             Fechar
           </button>
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5 space-y-4">
-            <h3 className="font-bold text-lg">Dados do serviço</h3>
+          <div className="bg-[#0D0D0D] border border-white/10 rounded-3xl p-5 space-y-4">
+            <h3 className="font-black text-lg">
+              Dados do serviço
+            </h3>
 
             <Campo
               label="Nome do serviço"
@@ -579,23 +616,31 @@ function ModalServico({ servico, fechar, salvar }: any) {
             />
 
             <div>
-              <label className="text-sm text-gray-400 block mb-2">Descrição</label>
+              <label className="text-sm text-gray-500 block mb-2">
+                Descrição
+              </label>
+
               <textarea
                 value={form.descricao}
                 onChange={(e) => atualizarCampo("descricao", e.target.value)}
                 rows={5}
                 placeholder="Automação para calcular frete pelo WhatsApp."
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3"
+                className="w-full bg-[#131313] border border-white/10 rounded-2xl px-4 py-3 outline-none focus:border-green-500 transition-all"
               />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="text-sm text-gray-400 block mb-2">Tipo do workflow</label>
+                <label className="text-sm text-gray-500 block mb-2">
+                  Tipo do workflow
+                </label>
+
                 <select
                   value={form.workflow_tipo}
-                  onChange={(e) => atualizarCampo("workflow_tipo", e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3"
+                  onChange={(e) =>
+                    atualizarCampo("workflow_tipo", e.target.value)
+                  }
+                  className="w-full bg-[#131313] border border-white/10 rounded-2xl px-4 py-3 outline-none"
                 >
                   {TIPOS_WORKFLOW.map((tipo) => (
                     <option key={tipo.id} value={tipo.id}>
@@ -613,18 +658,21 @@ function ModalServico({ servico, fechar, salvar }: any) {
               />
             </div>
 
-            <label className="flex items-center gap-3 bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 cursor-pointer">
+            <label className="flex items-center gap-3 bg-[#131313] border border-white/10 rounded-2xl px-4 py-3 cursor-pointer">
               <input
                 type="checkbox"
                 checked={form.ativo}
                 onChange={(e) => atualizarCampo("ativo", e.target.checked)}
               />
+
               Serviço ativo
             </label>
           </div>
 
-          <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5 space-y-4">
-            <h3 className="font-bold text-lg">Integração n8n + Evolution</h3>
+          <div className="bg-[#0D0D0D] border border-white/10 rounded-3xl p-5 space-y-4">
+            <h3 className="font-black text-lg">
+              Integração n8n + Evolution
+            </h3>
 
             <Campo
               label="Workflow ID do n8n"
@@ -641,37 +689,47 @@ function ModalServico({ servico, fechar, salvar }: any) {
             />
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <label className="flex items-center gap-3 bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 cursor-pointer">
+              <label className="flex items-center gap-3 bg-[#131313] border border-white/10 rounded-2xl px-4 py-3 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={form.evolution_webhook_enabled}
                   onChange={(e) =>
-                    atualizarCampo("evolution_webhook_enabled", e.target.checked)
+                    atualizarCampo(
+                      "evolution_webhook_enabled",
+                      e.target.checked
+                    )
                   }
                 />
+
                 Webhook Evolution ativo
               </label>
 
-              <label className="flex items-center gap-3 bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 cursor-pointer">
+              <label className="flex items-center gap-3 bg-[#131313] border border-white/10 rounded-2xl px-4 py-3 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={form.evolution_webhook_base64}
                   onChange={(e) =>
-                    atualizarCampo("evolution_webhook_base64", e.target.checked)
+                    atualizarCampo(
+                      "evolution_webhook_base64",
+                      e.target.checked
+                    )
                   }
                 />
+
                 Base64 ativo
               </label>
             </div>
 
             <div>
               <div className="flex items-center justify-between gap-3 mb-3">
-                <label className="text-sm text-gray-400">Eventos da Evolution</label>
+                <label className="text-sm text-gray-500">
+                  Eventos da Evolution
+                </label>
 
                 <button
                   type="button"
                   onClick={preencherRecomendado}
-                  className="text-xs bg-green-600 hover:bg-green-700 px-3 py-2 rounded-xl font-bold"
+                  className="text-xs bg-green-500/20 text-green-400 hover:bg-green-500/30 px-3 py-2 rounded-xl font-bold transition-all"
                 >
                   Usar recomendado
                 </button>
@@ -683,8 +741,8 @@ function ModalServico({ servico, fechar, salvar }: any) {
                     key={evento.id}
                     className={`border rounded-2xl p-4 cursor-pointer transition ${
                       form.evolution_events.includes(evento.id)
-                        ? "bg-green-500/10 border-green-600"
-                        : "bg-zinc-800 border-zinc-700"
+                        ? "bg-green-500/10 border-green-500/20"
+                        : "bg-[#131313] border-white/10"
                     }`}
                   >
                     <div className="flex items-start gap-3">
@@ -697,19 +755,22 @@ function ModalServico({ servico, fechar, salvar }: any) {
 
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-bold text-sm">{evento.nome}</p>
+                          <p className="font-bold text-sm">
+                            {evento.nome}
+                          </p>
+
                           {evento.recomendado && (
-                            <span className="bg-green-600 text-white text-[10px] px-2 py-1 rounded-full font-bold">
+                            <span className="bg-green-500/20 text-green-400 text-[10px] px-2 py-1 rounded-full font-bold">
                               RECOMENDADO
                             </span>
                           )}
                         </div>
 
-                        <p className="font-mono text-xs text-gray-300 mt-1">
+                        <p className="font-mono text-xs text-gray-400 mt-1">
                           {evento.id}
                         </p>
 
-                        <p className="text-xs text-gray-400 mt-2">
+                        <p className="text-xs text-gray-500 mt-2">
                           {evento.descricao}
                         </p>
                       </div>
@@ -723,7 +784,7 @@ function ModalServico({ servico, fechar, salvar }: any) {
               <button
                 type="button"
                 onClick={testarWebhook}
-                className="bg-blue-600 hover:bg-blue-700 px-5 py-3 rounded-2xl font-bold"
+                className="bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 px-5 py-3 rounded-2xl font-bold transition-all"
               >
                 Testar webhook
               </button>
@@ -731,7 +792,7 @@ function ModalServico({ servico, fechar, salvar }: any) {
               <button
                 type="button"
                 onClick={submit}
-                className="bg-green-600 hover:bg-green-700 px-5 py-3 rounded-2xl font-bold"
+                className="bg-green-500/20 text-green-400 hover:bg-green-500/30 px-5 py-3 rounded-2xl font-bold transition-all"
               >
                 Salvar serviço
               </button>
@@ -787,21 +848,21 @@ function ModalPlano({ plano, servicos, fechar, salvar }: any) {
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-zinc-950 border border-zinc-700 rounded-3xl w-full max-w-3xl p-6">
+      <div className="bg-[#090909] border border-white/10 rounded-3xl w-full max-w-3xl p-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
           <div>
-            <h2 className="text-2xl font-bold">
+            <h2 className="text-2xl font-black">
               {form.id ? "Editar plano" : "Novo plano"}
             </h2>
 
-            <p className="text-gray-400 text-sm mt-1">
+            <p className="text-gray-500 text-sm mt-1">
               Configure preço, duração e destaque do plano.
             </p>
           </div>
 
           <button
             onClick={fechar}
-            className="bg-zinc-800 hover:bg-zinc-700 px-5 py-3 rounded-2xl font-bold"
+            className="bg-white/5 text-white hover:bg-white/10 px-5 py-3 rounded-2xl font-bold transition-all"
           >
             Fechar
           </button>
@@ -809,11 +870,14 @@ function ModalPlano({ plano, servicos, fechar, salvar }: any) {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="text-sm text-gray-400 block mb-2">Serviço</label>
+            <label className="text-sm text-gray-500 block mb-2">
+              Serviço
+            </label>
+
             <select
               value={form.servico_id}
               onChange={(e) => atualizarCampo("servico_id", e.target.value)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3"
+              className="w-full bg-[#131313] border border-white/10 rounded-2xl px-4 py-3 outline-none"
             >
               {servicos.map((servico: any) => (
                 <option key={servico.id} value={servico.id}>
@@ -852,32 +916,37 @@ function ModalPlano({ plano, servicos, fechar, salvar }: any) {
           />
 
           <div className="grid grid-cols-1 gap-3">
-            <label className="flex items-center gap-3 bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 cursor-pointer">
+            <label className="flex items-center gap-3 bg-[#131313] border border-white/10 rounded-2xl px-4 py-3 cursor-pointer">
               <input
                 type="checkbox"
                 checked={form.ativo}
                 onChange={(e) => atualizarCampo("ativo", e.target.checked)}
               />
+
               Plano ativo
             </label>
 
-            <label className="flex items-center gap-3 bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 cursor-pointer">
+            <label className="flex items-center gap-3 bg-[#131313] border border-white/10 rounded-2xl px-4 py-3 cursor-pointer">
               <input
                 type="checkbox"
                 checked={form.destaque}
                 onChange={(e) => atualizarCampo("destaque", e.target.checked)}
               />
+
               Plano em destaque
             </label>
           </div>
 
           <div className="md:col-span-2">
-            <label className="text-sm text-gray-400 block mb-2">Descrição</label>
+            <label className="text-sm text-gray-500 block mb-2">
+              Descrição
+            </label>
+
             <textarea
               value={form.descricao}
               onChange={(e) => atualizarCampo("descricao", e.target.value)}
               rows={4}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3"
+              className="w-full bg-[#131313] border border-white/10 rounded-2xl px-4 py-3 outline-none focus:border-green-500 transition-all"
             />
           </div>
         </div>
@@ -885,14 +954,14 @@ function ModalPlano({ plano, servicos, fechar, salvar }: any) {
         <div className="flex gap-3 justify-end mt-6">
           <button
             onClick={fechar}
-            className="bg-zinc-800 hover:bg-zinc-700 px-5 py-3 rounded-2xl font-bold"
+            className="bg-white/5 text-white hover:bg-white/10 px-5 py-3 rounded-2xl font-bold transition-all"
           >
             Cancelar
           </button>
 
           <button
             onClick={submit}
-            className="bg-green-600 hover:bg-green-700 px-5 py-3 rounded-2xl font-bold"
+            className="bg-green-500/20 text-green-400 hover:bg-green-500/30 px-5 py-3 rounded-2xl font-bold transition-all"
           >
             Salvar plano
           </button>
@@ -902,16 +971,25 @@ function ModalPlano({ plano, servicos, fechar, salvar }: any) {
   );
 }
 
-function Campo({ label, value, onChange, placeholder = "", type = "text" }: any) {
+function Campo({
+  label,
+  value,
+  onChange,
+  placeholder = "",
+  type = "text",
+}: any) {
   return (
     <div>
-      <label className="text-sm text-gray-400 block mb-2">{label}</label>
+      <label className="text-sm text-gray-500 block mb-2">
+        {label}
+      </label>
+
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3"
+        className="w-full bg-[#131313] border border-white/10 rounded-2xl px-4 py-3 outline-none focus:border-green-500 transition-all"
       />
     </div>
   );
