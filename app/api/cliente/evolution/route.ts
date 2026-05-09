@@ -17,39 +17,35 @@ const EVOLUTION_API_URL = String(
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY!;
 
 async function validarCliente(token: string) {
-  if (!token) return null;
-
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
 
     if (decoded?.id && decoded?.tipo === "cliente") {
-      const { data: cliente } = await supabase
+      const { data } = await supabase
         .from("clientes_ia_whatsapp")
         .select("*")
         .eq("id", decoded.id)
         .maybeSingle();
 
-      if (cliente) return cliente;
+      if (data) return data;
     }
   } catch {}
 
-  const { data: clienteSessao } = await supabase
+  const { data } = await supabase
     .from("clientes_ia_whatsapp")
     .select("*")
     .eq("session_token", token)
     .maybeSingle();
 
-  if (clienteSessao) return clienteSessao;
-
-  return null;
+  return data || null;
 }
 
 function pegarQr(data: any) {
   return (
     data?.base64 ||
     data?.qrcode ||
-    data?.code ||
     data?.qr ||
+    data?.code ||
     data?.data?.base64 ||
     data?.data?.qrcode ||
     data?.qrcode?.base64 ||
@@ -58,14 +54,28 @@ function pegarQr(data: any) {
   );
 }
 
-function formatarQr(qr: string | null) {
+function formatarQr(qr: any) {
   if (!qr) return null;
 
-  if (String(qr).startsWith("data:image")) {
-    return qr;
+  const texto = String(qr);
+
+  if (texto.startsWith("data:image")) {
+    return texto;
   }
 
-  return `data:image/png;base64,${qr}`;
+  return `data:image/png;base64,${texto}`;
+}
+
+function erroTexto(error: any) {
+  const detalhe = error?.response?.data || error?.message || error;
+
+  if (typeof detalhe === "string") return detalhe;
+
+  try {
+    return JSON.stringify(detalhe);
+  } catch {
+    return "Erro desconhecido";
+  }
 }
 
 async function salvarQrCode(clienteServico: any, qr: string | null, status: string) {
@@ -78,35 +88,62 @@ async function salvarQrCode(clienteServico: any, qr: string | null, status: stri
     })
     .eq("id", clienteServico.id);
 
-  await supabase.from("evolution_qrcodes").upsert(
-    {
-      cliente_id: clienteServico.cliente_id,
-      servico_id: clienteServico.servico_id,
-      cliente_servico_id: clienteServico.id,
-      instance_name: clienteServico.instance_name,
-      qrcode: qr,
-      status,
-      atualizado_em: new Date().toISOString(),
-    },
-    {
-      onConflict: "instance_name",
-    }
-  );
+  const { data: qrExistente } = await supabase
+    .from("evolution_qrcodes")
+    .select("id")
+    .eq("instance_name", clienteServico.instance_name)
+    .maybeSingle();
 
-  await supabase.from("instancias_evolution").upsert(
-    {
-      cliente_id: clienteServico.cliente_id,
-      servico_id: clienteServico.servico_id,
-      cliente_servico_id: clienteServico.id,
-      instance_name: clienteServico.instance_name,
-      qrcode: qr,
-      status,
-      updated_at: new Date().toISOString(),
-    },
-    {
-      onConflict: "instance_name",
-    }
-  );
+  const payloadQr = {
+    cliente_id: clienteServico.cliente_id,
+    servico_id: clienteServico.servico_id,
+    cliente_servico_id: clienteServico.id,
+    instance_name: clienteServico.instance_name,
+    qrcode: qr,
+    status,
+    atualizado_em: new Date().toISOString(),
+  };
+
+  if (qrExistente?.id) {
+    await supabase
+      .from("evolution_qrcodes")
+      .update(payloadQr)
+      .eq("id", qrExistente.id);
+  } else {
+    await supabase
+      .from("evolution_qrcodes")
+      .insert(payloadQr);
+  }
+
+  const { data: instanciaExistente } = await supabase
+    .from("instancias_evolution")
+    .select("id")
+    .eq("instance_name", clienteServico.instance_name)
+    .maybeSingle();
+
+  const payloadInstancia = {
+    cliente_id: clienteServico.cliente_id,
+    servico_id: clienteServico.servico_id,
+    cliente_servico_id: clienteServico.id,
+    instance_name: clienteServico.instance_name,
+    qrcode: qr,
+    status,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (instanciaExistente?.id) {
+    await supabase
+      .from("instancias_evolution")
+      .update(payloadInstancia)
+      .eq("id", instanciaExistente.id);
+  } else {
+    await supabase
+      .from("instancias_evolution")
+      .insert({
+        ...payloadInstancia,
+        criado_em: new Date().toISOString(),
+      });
+  }
 }
 
 export async function POST(req: Request) {
@@ -172,11 +209,11 @@ export async function POST(req: Request) {
 
       const qr = formatarQr(pegarQr(response.data));
 
-      await salvarQrCode(clienteServico, qr, "qrcode");
+      await salvarQrCode(clienteServico, qr, qr ? "qrcode" : "connecting");
 
       return NextResponse.json({
         ok: true,
-        status: "qrcode",
+        status: qr ? "qrcode" : "connecting",
         qrcode: qr,
         data: response.data,
       });
@@ -255,12 +292,14 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   } catch (error: any) {
-    console.log("ERRO CLIENTE EVOLUTION:", error.response?.data || error.message);
+    const detalhe = erroTexto(error);
+
+    console.log("ERRO CLIENTE EVOLUTION:", detalhe);
 
     return NextResponse.json(
       {
         error: "Erro ao controlar WhatsApp",
-        detalhe: error.response?.data || error.message,
+        detalhe,
       },
       { status: 500 }
     );
