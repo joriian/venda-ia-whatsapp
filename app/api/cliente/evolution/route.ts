@@ -7,7 +7,10 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const EVOLUTION_API_URL = String(process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
+const EVOLUTION_API_URL = String(
+  process.env.EVOLUTION_API_URL || ""
+).replace(/\/$/, "");
+
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY!;
 
 async function validarCliente(token: string) {
@@ -23,12 +26,17 @@ async function validarCliente(token: string) {
     ? new Date(cliente.session_expires_at)
     : null;
 
-  if (!expira || expira < new Date()) return null;
+  if (!expira || expira < new Date()) {
+    return null;
+  }
 
   return cliente;
 }
 
-async function buscarServicoDoCliente(clienteId: string, clienteServicoId: string) {
+async function buscarServicoDoCliente(
+  clienteId: string,
+  clienteServicoId: string
+) {
   const { data } = await supabase
     .from("cliente_servicos")
     .select(`
@@ -45,20 +53,26 @@ async function buscarServicoDoCliente(clienteId: string, clienteServicoId: strin
 
 function pegarQrCode(data: any) {
   return (
+    data?.base64 ||
     data?.qrcode?.base64 ||
     data?.qrcode ||
-    data?.base64 ||
     data?.code ||
     data?.qr ||
-    data?.data?.qrcode ||
     data?.data?.base64 ||
+    data?.data?.qrcode ||
+    data?.qrcode?.code ||
     ""
   );
 }
 
 function statusConectado(status: string) {
   const s = String(status || "").toLowerCase();
-  return s === "open" || s === "connected" || s === "conectado";
+
+  return (
+    s === "open" ||
+    s === "connected" ||
+    s === "conectado"
+  );
 }
 
 async function salvarStatus(params: {
@@ -82,38 +96,42 @@ async function salvarStatus(params: {
     })
     .eq("id", params.clienteServicoId);
 
-  await supabase.from("evolution_qrcodes").upsert(
-    {
-      cliente_id: params.clienteId,
-      servico_id: params.servicoId,
-      cliente_servico_id: params.clienteServicoId,
-      instance_name: params.instanceName,
-      qrcode: params.qrcode || null,
-      status: params.status,
-      numero: params.numero || null,
-      nome: params.nome || null,
-      atualizado_em: new Date().toISOString(),
-    },
-    {
-      onConflict: "instance_name",
-    }
-  );
+  await supabase
+    .from("evolution_qrcodes")
+    .upsert(
+      {
+        cliente_id: params.clienteId,
+        servico_id: params.servicoId,
+        cliente_servico_id: params.clienteServicoId,
+        instance_name: params.instanceName,
+        qrcode: params.qrcode || null,
+        status: params.status,
+        numero: params.numero || null,
+        nome: params.nome || null,
+        atualizado_em: new Date().toISOString(),
+      },
+      {
+        onConflict: "instance_name",
+      }
+    );
 
-  await supabase.from("instancias_evolution").upsert(
-    {
-      cliente_id: params.clienteId,
-      servico_id: params.servicoId,
-      cliente_servico_id: params.clienteServicoId,
-      instance_name: params.instanceName,
-      status: params.status,
-      numero: params.numero || null,
-      nome: params.nome || null,
-      updated_at: new Date().toISOString(),
-    },
-    {
-      onConflict: "cliente_id,servico_id",
-    }
-  );
+  await supabase
+    .from("instancias_evolution")
+    .upsert(
+      {
+        cliente_id: params.clienteId,
+        servico_id: params.servicoId,
+        cliente_servico_id: params.clienteServicoId,
+        instance_name: params.instanceName,
+        status: params.status,
+        numero: params.numero || null,
+        nome: params.nome || null,
+        updated_at: new Date().toISOString(),
+      },
+      {
+        onConflict: "cliente_id,servico_id",
+      }
+    );
 }
 
 async function consultarStatus(instanceName: string) {
@@ -139,19 +157,32 @@ async function consultarStatus(instanceName: string) {
 }
 
 async function gerarQrCode(instanceName: string) {
-  const response = await axios.get(
-    `${EVOLUTION_API_URL}/instance/connect/${instanceName}`,
-    {
-      headers: {
-        apikey: EVOLUTION_API_KEY,
-      },
-    }
-  );
+  try {
+    const response = await axios.get(
+      `${EVOLUTION_API_URL}/instance/connect/${instanceName}`,
+      {
+        headers: {
+          apikey: EVOLUTION_API_KEY,
+        },
+      }
+    );
 
-  return {
-    qrcode: pegarQrCode(response.data),
-    data: response.data,
-  };
+    console.log("EVOLUTION CONNECT:", response.data);
+
+    const qr = pegarQrCode(response.data);
+
+    return {
+      qrcode: qr,
+      data: response.data,
+    };
+  } catch (error: any) {
+    console.log(
+      "ERRO AO GERAR QR:",
+      error.response?.data || error.message
+    );
+
+    throw error;
+  }
 }
 
 async function reiniciarInstancia(instanceName: string) {
@@ -190,45 +221,76 @@ export async function POST(req: Request) {
     const acao = body.acao;
 
     if (!token) {
-      return NextResponse.json({ error: "Token obrigatório" }, { status: 401 });
+      return NextResponse.json(
+        {
+          error: "Token obrigatório",
+        },
+        {
+          status: 401,
+        }
+      );
     }
 
     if (!clienteServicoId) {
       return NextResponse.json(
-        { error: "Serviço do cliente obrigatório" },
-        { status: 400 }
+        {
+          error: "Serviço obrigatório",
+        },
+        {
+          status: 400,
+        }
       );
     }
 
     const cliente = await validarCliente(token);
 
     if (!cliente) {
-      return NextResponse.json({ error: "Sessão inválida" }, { status: 401 });
-    }
-
-    const servicoCliente = await buscarServicoDoCliente(cliente.id, clienteServicoId);
-
-    if (!servicoCliente) {
       return NextResponse.json(
-        { error: "Serviço não encontrado para este cliente" },
-        { status: 404 }
+        {
+          error: "Sessão inválida",
+        },
+        {
+          status: 401,
+        }
       );
     }
 
-    const instanceName = servicoCliente.instance_name;
+    const servicoCliente =
+      await buscarServicoDoCliente(
+        cliente.id,
+        clienteServicoId
+      );
+
+    if (!servicoCliente) {
+      return NextResponse.json(
+        {
+          error: "Serviço não encontrado",
+        },
+        {
+          status: 404,
+        }
+      );
+    }
+
+    const instanceName =
+      servicoCliente.instance_name;
 
     if (!instanceName) {
       return NextResponse.json(
         {
           error:
-            "Este serviço ainda não possui instância vinculada. Aguarde a aprovação do pagamento ou contate o suporte.",
+            "Instância não encontrada para este serviço",
         },
-        { status: 400 }
+        {
+          status: 400,
+        }
       );
     }
 
     if (acao === "status") {
-      const status = await consultarStatus(instanceName);
+      const status = await consultarStatus(
+        instanceName
+      );
 
       await salvarStatus({
         clienteId: cliente.id,
@@ -243,13 +305,17 @@ export async function POST(req: Request) {
         acao,
         instanceName,
         status: status.status,
-        conectado: statusConectado(status.status),
+        conectado: statusConectado(
+          status.status
+        ),
         data: status.data,
       });
     }
 
     if (acao === "qrcode") {
-      const qr = await gerarQrCode(instanceName);
+      const qr = await gerarQrCode(
+        instanceName
+      );
 
       await salvarStatus({
         clienteId: cliente.id,
@@ -257,7 +323,7 @@ export async function POST(req: Request) {
         servicoId: servicoCliente.servico_id,
         instanceName,
         status: "qrcode",
-        qrcode: qr.qrcode,
+        qrcode: qr.qrcode || null,
       });
 
       return NextResponse.json({
@@ -265,13 +331,15 @@ export async function POST(req: Request) {
         acao,
         instanceName,
         status: "qrcode",
-        qrcode: qr.qrcode,
+        qrcode: qr.qrcode || null,
         data: qr.data,
       });
     }
 
     if (acao === "reiniciar") {
-      const data = await reiniciarInstancia(instanceName);
+      const data = await reiniciarInstancia(
+        instanceName
+      );
 
       await salvarStatus({
         clienteId: cliente.id,
@@ -291,7 +359,10 @@ export async function POST(req: Request) {
     }
 
     if (acao === "desconectar") {
-      const data = await desconectarInstancia(instanceName);
+      const data =
+        await desconectarInstancia(
+          instanceName
+        );
 
       await salvarStatus({
         clienteId: cliente.id,
@@ -312,18 +383,29 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json(
-      { error: "Ação inválida" },
-      { status: 400 }
+      {
+        error: "Ação inválida",
+      },
+      {
+        status: 400,
+      }
     );
   } catch (error: any) {
-    console.log("ERRO CLIENTE EVOLUTION:", error.response?.data || error.message);
+    console.log(
+      "ERRO CLIENTE EVOLUTION:",
+      error.response?.data || error.message
+    );
 
     return NextResponse.json(
       {
         error: "Erro ao controlar instância",
-        detalhe: error.response?.data || error.message,
+        detalhe:
+          error.response?.data ||
+          error.message,
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }
