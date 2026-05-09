@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import crypto from "crypto";
+import jwt from "jsonwebtoken";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+const JWT_SECRET = process.env.JWT_SECRET || "NEXORA_SECRET_2026";
 
 async function validarAdmin(req: Request) {
   const token = req.headers.get("x-admin-token");
@@ -30,12 +32,31 @@ async function validarAdmin(req: Request) {
   return admin;
 }
 
+function gerarTokenCliente(cliente: any) {
+  return jwt.sign(
+    {
+      id: cliente.id,
+      nome: cliente.nome,
+      email: cliente.email,
+      tipo: "cliente",
+      acesso_admin: true,
+    },
+    JWT_SECRET,
+    {
+      expiresIn: "2h",
+    }
+  );
+}
+
 export async function POST(req: Request) {
   try {
     const admin = await validarAdmin(req);
 
     if (!admin) {
-      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Não autorizado" },
+        { status: 401 }
+      );
     }
 
     if (admin.nivel !== "dono" && admin.nivel !== "admin") {
@@ -48,7 +69,10 @@ export async function POST(req: Request) {
     const { clienteId } = await req.json();
 
     if (!clienteId) {
-      return NextResponse.json({ error: "Cliente obrigatório" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Cliente obrigatório" },
+        { status: 400 }
+      );
     }
 
     const { data: cliente } = await supabase
@@ -58,31 +82,26 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (!cliente) {
-      return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Cliente não encontrado" },
+        { status: 404 }
+      );
     }
 
-    const tokenCliente = crypto.randomBytes(32).toString("hex");
-
-    const expira = new Date();
-    expira.setHours(expira.getHours() + 2);
-
-    await supabase
-      .from("clientes_ia_whatsapp")
-      .update({
-        session_token: tokenCliente,
-        session_expires_at: expira.toISOString(),
-      })
-      .eq("id", clienteId);
+    const tokenCliente = gerarTokenCliente(cliente);
 
     return NextResponse.json({
       ok: true,
       token: tokenCliente,
       clienteId,
-      expiresAt: expira.toISOString(),
       url: `/cliente?cliente=${clienteId}&token=${tokenCliente}&admin=1`,
     });
   } catch (error: any) {
     console.log("ERRO ACESSAR CLIENTE:", error.message);
-    return NextResponse.json({ error: "Erro ao acessar cliente" }, { status: 500 });
+
+    return NextResponse.json(
+      { error: "Erro ao acessar cliente" },
+      { status: 500 }
+    );
   }
 }
