@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import axios from "axios";
 import crypto from "crypto";
+
 import {
   configurarInstanciaCompleta,
   gerarInstanceName,
 } from "@/lib/evolution-config";
+
 import { notificarPagamentoAprovado } from "@/lib/notificacoes";
 
 const supabase = createClient(
@@ -19,7 +21,8 @@ function normalizarStatusPagamento(status: string) {
   const s = String(status || "").toLowerCase();
 
   if (s === "approved") return "approved";
-  if (s === "pending" || s === "in_process") return "pending";
+  if (s === "pending") return "pending";
+  if (s === "in_process") return "pending";
   if (s === "rejected") return "rejected";
   if (s === "cancelled") return "cancelled";
   if (s === "refunded") return "refunded";
@@ -40,36 +43,12 @@ function traduzirStatusPagamento(status: string) {
   return "pendente";
 }
 
-function somarMeses(dataBase: Date, meses: number) {
-  const nova = new Date(dataBase);
-  nova.setMonth(nova.getMonth() + Number(meses || 1));
-  return nova;
-}
-
-function calcularNovaExpiracao(dataAtual: any, meses: number) {
-  const agora = new Date();
-  const expiraAtual = dataAtual ? new Date(dataAtual) : null;
-
-  const base =
-    expiraAtual && expiraAtual > agora
-      ? expiraAtual
-      : agora;
-
-  return somarMeses(base, meses);
-}
-
 function extrairPaymentId(body: any) {
   if (body?.data?.id) {
     return String(body.data.id);
   }
 
-  if (body?.type === "payment" && body?.resource) {
-    return String(body.resource)
-      .split("/")
-      .pop();
-  }
-
-  if (body?.topic === "payment" && body?.resource) {
+  if (body?.resource) {
     return String(body.resource)
       .split("/")
       .pop();
@@ -78,9 +57,24 @@ function extrairPaymentId(body: any) {
   return null;
 }
 
-async function buscarPagamentoMercadoPago(
-  paymentId: string
-) {
+function somarMeses(data: Date, meses: number) {
+  const nova = new Date(data);
+  nova.setMonth(nova.getMonth() + Number(meses || 1));
+  return nova;
+}
+
+function calcularNovaExpiracao(dataAtual: any, meses: number) {
+  const agora = new Date();
+
+  const base =
+    dataAtual && new Date(dataAtual) > agora
+      ? new Date(dataAtual)
+      : agora;
+
+  return somarMeses(base, meses);
+}
+
+async function buscarPagamentoMercadoPago(paymentId: string) {
   const response = await axios.get(
     `https://api.mercadopago.com/v1/payments/${paymentId}`,
     {
@@ -93,130 +87,65 @@ async function buscarPagamentoMercadoPago(
   return response.data;
 }
 
-async function buscarOuCriarCliente(
-  payment: MpPayment
-) {
+async function buscarOuCriarCliente(payment: MpPayment) {
   const metadata = payment?.metadata || {};
 
-  const clienteId =
-    metadata.cliente_id || null;
+  if (metadata.cliente_id) {
+    const { data } = await supabase
+      .from("clientes_ia_whatsapp")
+      .select("*")
+      .eq("id", metadata.cliente_id)
+      .maybeSingle();
 
-  if (clienteId) {
-    const { data: cliente } =
-      await supabase
-        .from("clientes_ia_whatsapp")
-        .select("*")
-        .eq("id", clienteId)
-        .maybeSingle();
-
-    if (cliente) {
-      return cliente;
-    }
+    if (data) return data;
   }
 
   const email =
     payment?.payer?.email ||
     metadata.email ||
-    payment?.additional_info?.payer?.email ||
     null;
 
   if (email) {
-    const { data: clienteEmail } =
-      await supabase
-        .from("clientes_ia_whatsapp")
-        .select("*")
-        .ilike("email", email)
-        .order("criado_em", {
-          ascending: false,
-        })
-        .limit(1)
-        .maybeSingle();
-
-    if (clienteEmail) {
-      return clienteEmail;
-    }
-  }
-
-  const telefone =
-    metadata.telefone ||
-    payment?.payer?.phone?.number ||
-    payment?.additional_info?.payer?.phone?.number ||
-    null;
-
-  if (telefone) {
-    const telefoneLimpo = String(
-      telefone
-    ).replace(/\D/g, "");
-
-    const { data: clienteTelefone } =
-      await supabase
-        .from("clientes_ia_whatsapp")
-        .select("*")
-        .ilike(
-          "telefone",
-          `%${telefoneLimpo}%`
-        )
-        .order("criado_em", {
-          ascending: false,
-        })
-        .limit(1)
-        .maybeSingle();
-
-    if (clienteTelefone) {
-      return clienteTelefone;
-    }
-  }
-
-  const novoId = crypto.randomUUID();
-
-  const { data: novoCliente, error } =
-    await supabase
+    const { data } = await supabase
       .from("clientes_ia_whatsapp")
-      .insert({
-        id: novoId,
-
-        nome:
-          metadata.nome ||
-          payment?.payer?.first_name ||
-          payment?.additional_info?.payer?.first_name ||
-          "Cliente",
-
-        email:
-          email ||
-          `cliente-${novoId}@sem-email.local`,
-
-        telefone:
-          telefone || "Não informado",
-
-        status:
-          "aguardando_pagamento",
-
-        plano_id:
-          metadata.plano_id || null,
-
-        servico_id:
-          metadata.servico_id || null,
-
-        criado_em:
-          new Date().toISOString(),
-      })
       .select("*")
-      .single();
+      .ilike("email", email)
+      .limit(1)
+      .maybeSingle();
+
+    if (data) return data;
+  }
+
+  const id = crypto.randomUUID();
+
+  const { data, error } = await supabase
+    .from("clientes_ia_whatsapp")
+    .insert({
+      id,
+      nome:
+        metadata.nome ||
+        payment?.payer?.first_name ||
+        "Cliente",
+      email:
+        email ||
+        `cliente-${id}@temp.local`,
+      telefone:
+        metadata.telefone ||
+        "Não informado",
+      status: "aguardando_pagamento",
+      criado_em: new Date().toISOString(),
+    })
+    .select("*")
+    .single();
 
   if (error) {
-    throw new Error(
-      `Erro ao criar cliente: ${error.message}`
-    );
+    throw new Error(error.message);
   }
 
-  return novoCliente;
+  return data;
 }
 
-async function buscarPlano(
-  planoId: string | null
-) {
-  if (!planoId) return null;
-
+async function buscarPlano(planoId: string) {
   const { data } = await supabase
     .from("planos")
     .select("*")
@@ -226,152 +155,132 @@ async function buscarPlano(
   return data;
 }
 
-async function buscarServico(
-  servicoId: string | null,
-  plano: any
-) {
-  if (servicoId) {
-    const { data } = await supabase
-      .from("servicos_ia")
-      .select("*")
-      .eq("id", servicoId)
-      .maybeSingle();
+async function buscarServico(servicoId: string) {
+  const { data } = await supabase
+    .from("servicos_ia")
+    .select("*")
+    .eq("id", servicoId)
+    .maybeSingle();
 
-    if (data) return data;
-  }
-
-  if (plano?.servico_id) {
-    const { data } = await supabase
-      .from("servicos_ia")
-      .select("*")
-      .eq("id", plano.servico_id)
-      .maybeSingle();
-
-    if (data) return data;
-  }
-
-  const { data: primeiroServico } =
-    await supabase
-      .from("servicos_ia")
-      .select("*")
-      .eq("ativo", true)
-      .order("ordem", {
-        ascending: true,
-      })
-      .limit(1)
-      .maybeSingle();
-
-  return primeiroServico;
+  return data;
 }
 
-async function registrarPagamento(
-  params: {
-    clienteId: string;
-    payment: MpPayment;
-    planoId: string | null;
-    valorOriginal: number;
-    descontoValor: number;
-    cupomCodigo: string | null;
-  }
-) {
-  const paymentId = String(
-    params.payment.id
+async function registrarPagamento(params: {
+  clienteId: string;
+  clienteServicoId?: string | null;
+  payment: MpPayment;
+  planoId: string;
+  servicoId: string;
+  metadata: any;
+}) {
+  const paymentId = String(params.payment.id);
+
+  const statusMp = normalizarStatusPagamento(
+    params.payment.status
   );
 
-  const statusMp =
-    normalizarStatusPagamento(
-      params.payment.status
-    );
-
-  const status =
-    traduzirStatusPagamento(statusMp);
+  const status = traduzirStatusPagamento(statusMp);
 
   const valor = Number(
     params.payment.transaction_amount ||
-      params.payment.total_paid_amount ||
       0
   );
 
   const registro = {
     cliente_id: params.clienteId,
+    cliente_servico_id:
+      params.clienteServicoId || null,
     mercado_pago_id: paymentId,
     payment_id: paymentId,
+    plano_id: params.planoId,
+    servico_id: params.servicoId,
     status,
     status_mp: statusMp,
     valor,
-    plano_id: params.planoId,
-    cupom_codigo: params.cupomCodigo,
-    desconto_valor:
-      params.descontoValor || 0,
     valor_original:
-      params.valorOriginal || valor,
+      params.metadata.valor_original ||
+      valor,
+    desconto_valor:
+      params.metadata.desconto_valor ||
+      0,
+    credito_proporcional:
+      params.metadata.credito_proporcional ||
+      0,
+    tipo_movimento:
+      params.metadata.tipo_movimento ||
+      "nova_contratacao",
+    cupom_codigo:
+      params.metadata.cupom_codigo ||
+      null,
     criado_em:
       params.payment.date_approved ||
-      params.payment.date_created ||
       new Date().toISOString(),
   };
 
-  const { data: existente } =
-    await supabase
-      .from("pagamentos_ia_whatsapp")
-      .select("id")
-      .or(
-        `payment_id.eq.${paymentId},mercado_pago_id.eq.${paymentId}`
-      )
-      .maybeSingle();
+  const { data: existente } = await supabase
+    .from("pagamentos_ia_whatsapp")
+    .select("id")
+    .eq("payment_id", paymentId)
+    .maybeSingle();
 
   if (existente?.id) {
-    const { error } = await supabase
+    await supabase
       .from("pagamentos_ia_whatsapp")
       .update(registro)
       .eq("id", existente.id);
 
-    if (error) {
-      throw new Error(
-        `Erro ao atualizar pagamento: ${error.message}`
-      );
-    }
-
     return existente.id;
   }
 
-  const { data, error } =
-    await supabase
-      .from("pagamentos_ia_whatsapp")
-      .insert(registro)
-      .select("id")
-      .single();
+  const { data } = await supabase
+    .from("pagamentos_ia_whatsapp")
+    .insert(registro)
+    .select("id")
+    .single();
 
-  if (error) {
-    throw new Error(
-      `Erro ao registrar pagamento: ${error.message}`
-    );
-  }
-
-  return data.id;
+  return data?.id;
 }
 
-async function ativarOuRenovarServico(
-  params: {
-    cliente: any;
-    servico: any;
-    plano: any;
-    meses: number;
-  }
-) {
-  const {
-    cliente,
-    servico,
-    plano,
-  } = params;
+async function ativarServico(params: {
+  cliente: any;
+  servico: any;
+  plano: any;
+  metadata: any;
+}) {
+  const { cliente, servico, plano, metadata } = params;
 
-  const meses = Number(
-    params.meses ||
-      plano?.meses ||
-      1
-  );
+  const clienteServicoId =
+    metadata.cliente_servico_id || null;
+
+  let vinculo = null;
+
+  if (clienteServicoId) {
+    const { data } = await supabase
+      .from("cliente_servicos")
+      .select("*")
+      .eq("id", clienteServicoId)
+      .maybeSingle();
+
+    vinculo = data;
+  }
+
+  if (!vinculo) {
+    const { data } = await supabase
+      .from("cliente_servicos")
+      .select("*")
+      .eq("cliente_id", cliente.id)
+      .eq("servico_id", servico.id)
+      .order("created_at", {
+        ascending: false,
+      })
+      .limit(1)
+      .maybeSingle();
+
+    vinculo = data;
+  }
 
   const instanceName =
+    vinculo?.instance_name ||
     gerarInstanceName(
       cliente.id,
       servico.slug ||
@@ -379,162 +288,84 @@ async function ativarOuRenovarServico(
         "servico"
     );
 
-  const {
-    data: vinculoMesmoPlano,
-  } = await supabase
-    .from("cliente_servicos")
-    .select("*")
-    .eq("cliente_id", cliente.id)
-    .eq("servico_id", servico.id)
-    .eq("plano_id", plano.id)
-    .in("status", [
-      "ativo",
-      "aguardando_pagamento",
-      "vencido",
-    ])
-    .order("created_at", {
-      ascending: false,
-    })
-    .limit(1)
-    .maybeSingle();
-
   const novaExpiracao =
     calcularNovaExpiracao(
-      vinculoMesmoPlano?.data_expiracao ||
-        cliente.data_expiracao,
-      meses
+      vinculo?.data_expiracao,
+      Number(
+        metadata.meses ||
+          plano.meses ||
+          1
+      )
     );
 
-  const inicio =
-    vinculoMesmoPlano?.data_inicio ||
+  const dataInicio =
+    vinculo?.data_inicio ||
     new Date().toISOString();
 
-  let clienteServicoId =
-    vinculoMesmoPlano?.id || null;
-
-  const payloadServico = {
+  const payload = {
     plano_id: plano.id,
     status: "ativo",
-    data_inicio: inicio,
+    data_inicio: dataInicio,
     data_expiracao:
       novaExpiracao.toISOString(),
     workflow_id:
       servico.workflow_id || null,
     webhook_url:
       servico.webhook_url || null,
-    instance_name: instanceName,
     evolution_status:
-      vinculoMesmoPlano?.evolution_status ||
+      vinculo?.evolution_status ||
       "connecting",
+    instance_name: instanceName,
     updated_at:
       new Date().toISOString(),
   };
 
-  if (vinculoMesmoPlano?.id) {
-    const { error } = await supabase
-      .from("cliente_servicos")
-      .update(payloadServico)
-      .eq("id", vinculoMesmoPlano.id);
+  let finalClienteServicoId =
+    vinculo?.id || null;
 
-    if (error) {
-      throw new Error(
-        `Erro ao renovar serviço: ${error.message}`
-      );
-    }
+  if (vinculo?.id) {
+    await supabase
+      .from("cliente_servicos")
+      .update(payload)
+      .eq("id", vinculo.id);
+
+    finalClienteServicoId =
+      vinculo.id;
   } else {
-    const {
-      data: novoVinculo,
-      error,
-    } = await supabase
+    const { data } = await supabase
       .from("cliente_servicos")
       .insert({
         cliente_id: cliente.id,
         servico_id: servico.id,
-        ...payloadServico,
         evolution_configurado: false,
         created_at:
           new Date().toISOString(),
+        ...payload,
       })
       .select("*")
       .single();
 
-    if (error) {
-      throw new Error(
-        `Erro ao ativar novo plano do serviço: ${error.message}`
-      );
-    }
-
-    clienteServicoId =
-      novoVinculo.id;
-  }
-
-  const {
-    error: clienteError,
-  } = await supabase
-    .from("clientes_ia_whatsapp")
-    .update({
-      plano_id: plano.id,
-      servico_id: servico.id,
-      status: "ativo",
-      data_inicio:
-        cliente.data_inicio ||
-        inicio,
-      data_expiracao:
-        novaExpiracao.toISOString(),
-    })
-    .eq("id", cliente.id);
-
-  if (clienteError) {
-    throw new Error(
-      `Erro ao atualizar cliente: ${clienteError.message}`
-    );
+    finalClienteServicoId =
+      data?.id || null;
   }
 
   return {
-    novaExpiracao,
+    clienteServicoId:
+      finalClienteServicoId,
     instanceName,
-    clienteServicoId,
+    novaExpiracao,
   };
 }
 
-async function marcarAguardandoPagamento(
-  clienteId: string,
-  servicoId?: string | null
-) {
-  await supabase
-    .from("clientes_ia_whatsapp")
-    .update({
-      status:
-        "aguardando_pagamento",
-    })
-    .eq("id", clienteId);
-
-  if (servicoId) {
-    await supabase
-      .from("cliente_servicos")
-      .update({
-        status:
-          "aguardando_pagamento",
-        updated_at:
-          new Date().toISOString(),
-      })
-      .eq("cliente_id", clienteId)
-      .eq("servico_id", servicoId);
-  }
-}
-
-function normalizarEventosEvolution(
-  servico: any
-) {
-  const eventos =
-    servico?.evolution_events;
-
+function normalizarEventosEvolution(servico: any) {
   if (
-    Array.isArray(eventos) &&
-    eventos.length > 0
+    Array.isArray(
+      servico?.evolution_events
+    )
   ) {
-    return eventos.map((e) =>
-      String(e).toUpperCase()
+    return servico.evolution_events.map(
+      (e: string) =>
+        String(e).toUpperCase()
     );
   }
 
@@ -544,14 +375,12 @@ function normalizarEventosEvolution(
   ];
 }
 
-async function configurarEvolutionDoServico(
-  params: {
-    cliente: any;
-    servico: any;
-    clienteServicoId: string | null;
-    instanceName: string;
-  }
-) {
+async function configurarEvolution(params: {
+  cliente: any;
+  servico: any;
+  clienteServicoId: string;
+  instanceName: string;
+}) {
   const {
     cliente,
     servico,
@@ -561,8 +390,7 @@ async function configurarEvolutionDoServico(
 
   const webhookUrl =
     servico.webhook_url ||
-    process.env
-      .DEFAULT_N8N_WEBHOOK_URL;
+    process.env.DEFAULT_N8N_WEBHOOK_URL;
 
   if (!webhookUrl) {
     return {
@@ -572,13 +400,12 @@ async function configurarEvolutionDoServico(
     };
   }
 
-  const configuracao =
+  const config =
     await configurarInstanciaCompleta({
       clienteId: cliente.id,
       servicoSlug:
         servico.slug ||
-        servico.nome ||
-        "servico",
+        servico.nome,
       webhookUrl,
       events:
         normalizarEventosEvolution(
@@ -593,15 +420,12 @@ async function configurarEvolutionDoServico(
     });
 
   const finalInstanceName =
-    configuracao.instanceName ||
+    config.instanceName ||
     instanceName;
 
   await supabase
     .from("cliente_servicos")
     .update({
-      workflow_id:
-        servico.workflow_id || null,
-      webhook_url: webhookUrl,
       instance_name:
         finalInstanceName,
       evolution_configurado: true,
@@ -612,8 +436,7 @@ async function configurarEvolutionDoServico(
       updated_at:
         new Date().toISOString(),
     })
-    .eq("cliente_id", cliente.id)
-    .eq("servico_id", servico.id);
+    .eq("id", clienteServicoId);
 
   await supabase
     .from("instancias_evolution")
@@ -629,7 +452,7 @@ async function configurarEvolutionDoServico(
         workflow_id:
           servico.workflow_id || null,
         servico_nome:
-          servico.nome || null,
+          servico.nome,
         status: "connecting",
         updated_at:
           new Date().toISOString(),
@@ -641,15 +464,13 @@ async function configurarEvolutionDoServico(
     );
 
   return {
-    ...configuracao,
+    ...config,
     instanceName:
       finalInstanceName,
   };
 }
 
-export async function POST(
-  req: Request
-) {
+export async function POST(req: Request) {
   try {
     const body = await req.json();
 
@@ -664,8 +485,7 @@ export async function POST(
     if (!paymentId) {
       return NextResponse.json({
         ok: true,
-        ignorado:
-          "Evento sem ID de pagamento",
+        ignorado: true,
       });
     }
 
@@ -674,172 +494,110 @@ export async function POST(
         paymentId
       );
 
+    const metadata =
+      payment.metadata || {};
+
     const statusPagamento =
       normalizarStatusPagamento(
         payment.status
       );
-
-    const statusPagamentoPt =
-      traduzirStatusPagamento(
-        statusPagamento
-      );
-
-    const metadata =
-      payment.metadata || {};
 
     const cliente =
       await buscarOuCriarCliente(
         payment
       );
 
-    const planoId =
-      metadata.plano_id ||
-      cliente.plano_id ||
-      null;
-
     const plano =
-      await buscarPlano(planoId);
+      await buscarPlano(
+        metadata.plano_id
+      );
 
     if (!plano) {
-      await registrarPagamento({
-        clienteId: cliente.id,
-        payment,
-        planoId,
-        valorOriginal: Number(
-          metadata.valor_original ||
-            payment.transaction_amount ||
-            0
-        ),
-        descontoValor: Number(
-          metadata.desconto_valor ||
-            0
-        ),
-        cupomCodigo:
-          metadata.cupom_codigo ||
-          null,
-      });
-
-      return NextResponse.json({
-        ok: true,
-        aviso:
-          "Pagamento registrado, mas plano não encontrado",
-        status:
-          statusPagamentoPt,
-      });
+      return NextResponse.json(
+        {
+          error:
+            "Plano não encontrado",
+        },
+        { status: 404 }
+      );
     }
-
-    const servicoId =
-      metadata.servico_id ||
-      cliente.servico_id ||
-      plano.servico_id ||
-      null;
 
     const servico =
       await buscarServico(
-        servicoId,
-        plano
+        metadata.servico_id
       );
 
     if (!servico) {
-      await registrarPagamento({
-        clienteId: cliente.id,
-        payment,
-        planoId: plano.id,
-        valorOriginal: Number(
-          metadata.valor_original ||
-            plano.valor ||
-            payment.transaction_amount ||
-            0
-        ),
-        descontoValor: Number(
-          metadata.desconto_valor ||
-            0
-        ),
-        cupomCodigo:
-          metadata.cupom_codigo ||
-          null,
-      });
-
-      return NextResponse.json({
-        ok: true,
-        aviso:
-          "Pagamento registrado, mas serviço não encontrado",
-        status:
-          statusPagamentoPt,
-      });
+      return NextResponse.json(
+        {
+          error:
+            "Serviço não encontrado",
+        },
+        { status: 404 }
+      );
     }
 
     await registrarPagamento({
       clienteId: cliente.id,
+      clienteServicoId:
+        metadata.cliente_servico_id ||
+        null,
       payment,
       planoId: plano.id,
-      valorOriginal: Number(
-        metadata.valor_original ||
-          plano.valor ||
-          payment.transaction_amount ||
-          0
-      ),
-      descontoValor: Number(
-        metadata.desconto_valor ||
-          0
-      ),
-      cupomCodigo:
-        metadata.cupom_codigo ||
-        null,
+      servicoId: servico.id,
+      metadata,
     });
 
     if (
       statusPagamento !==
       "approved"
     ) {
-      await marcarAguardandoPagamento(
-        cliente.id,
-        servico.id
-      );
-
       return NextResponse.json({
         ok: true,
         status:
-          statusPagamentoPt,
-        acao:
-          "pagamento_nao_aprovado",
+          traduzirStatusPagamento(
+            statusPagamento
+          ),
       });
     }
 
     const ativacao =
-      await ativarOuRenovarServico({
+      await ativarServico({
         cliente,
         servico,
         plano,
-        meses: Number(
-          metadata.meses ||
-            plano.meses ||
-            1
-        ),
+        metadata,
       });
 
-    let instancia: any = null;
+    let evolution = null;
 
     try {
-      instancia =
-        await configurarEvolutionDoServico(
-          {
-            cliente,
-            servico,
-            clienteServicoId:
-              ativacao.clienteServicoId,
-            instanceName:
-              ativacao.instanceName,
-          }
-        );
+      evolution =
+        await configurarEvolution({
+          cliente,
+          servico,
+          clienteServicoId:
+            ativacao.clienteServicoId,
+          instanceName:
+            ativacao.instanceName,
+        });
     } catch (error: any) {
-      instancia = {
+      evolution = {
         ok: false,
         erro:
-          error.response?.data ||
+          error?.response?.data ||
           error.message,
       };
     }
+
+    await supabase
+      .from("clientes_ia_whatsapp")
+      .update({
+        status: "ativo",
+        updated_at:
+          new Date().toISOString(),
+      })
+      .eq("id", cliente.id);
 
     if (
       ativacao.clienteServicoId
@@ -856,6 +614,9 @@ export async function POST(
     return NextResponse.json({
       ok: true,
       status: "aprovado",
+      tipo_movimento:
+        metadata.tipo_movimento ||
+        "nova_contratacao",
       cliente_id: cliente.id,
       servico_id: servico.id,
       plano_id: plano.id,
@@ -865,13 +626,14 @@ export async function POST(
         ativacao.instanceName,
       data_expiracao:
         ativacao.novaExpiracao.toISOString(),
-      instancia,
+      evolution,
     });
   } catch (error: any) {
     console.log(
       "ERRO WEBHOOK MERCADO PAGO:",
-      error.response?.data ||
-        error.message
+      error?.response?.data ||
+        error?.message ||
+        error
     );
 
     return NextResponse.json(
@@ -879,8 +641,9 @@ export async function POST(
         error:
           "Erro no webhook Mercado Pago",
         detalhe:
-          error.response?.data ||
-          error.message,
+          error?.response?.data ||
+          error?.message ||
+          "Erro interno",
       },
       { status: 500 }
     );
