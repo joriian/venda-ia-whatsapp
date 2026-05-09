@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 export default function AdminLoginPage() {
-  const [email, setEmail] = useState("admin@admin.com");
+  const [email, setEmail] = useState("joriian@hotmail.com");
   const [senha, setSenha] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -27,7 +27,10 @@ export default function AdminLoginPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ email, senha }),
+        body: JSON.stringify({
+          email,
+          senha,
+        }),
       });
 
       const data = await res.json();
@@ -38,13 +41,14 @@ export default function AdminLoginPage() {
       }
 
       localStorage.setItem("adminToken", data.token);
-      localStorage.setItem("adminNome", data.admin.nome);
-      localStorage.setItem("adminEmail", data.admin.email);
-      localStorage.setItem("adminNivel", data.admin.nivel);
+      localStorage.setItem("adminNome", data.admin?.nome || "");
+      localStorage.setItem("adminEmail", data.admin?.email || "");
+      localStorage.setItem("adminNivel", data.admin?.nivel || "");
       localStorage.setItem("adminSessaoExpira", data.expiresAt || "");
 
-      window.location.href = "/admin";
-    } catch {
+      window.location.assign("/admin");
+    } catch (error) {
+      console.log(error);
       alert("Erro ao fazer login");
     } finally {
       setLoading(false);
