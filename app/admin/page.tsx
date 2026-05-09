@@ -19,6 +19,7 @@ import AdminInstanciasTable from "@/components/admin/dashboard/AdminInstanciasTa
 import AdminClientes from "@/components/admin/clientes/AdminClientes";
 import AdminFinanceiro from "@/components/admin/financeiro/AdminFinanceiro";
 import AdminUsuarios from "@/components/admin/usuarios/AdminUsuarios";
+import AdminCatalogo from "@/components/admin/catalogo/AdminCatalogo";
 
 import AdminLogs from "@/components/admin/AdminLogs";
 import AdminSaudeAutomacoes from "@/components/admin/AdminSaudeAutomacoes";
@@ -32,6 +33,7 @@ type Aba =
   | "clientes"
   | "financeiro"
   | "usuarios"
+  | "catalogo"
   | "instancias"
   | "notificacoes"
   | "saude"
@@ -63,6 +65,9 @@ export default function AdminPage() {
   const [instancias, setInstancias] = useState<any[]>([]);
   const [dashboard, setDashboard] = useState<any>(null);
 
+  const [servicos, setServicos] = useState<any[]>([]);
+  const [planos, setPlanos] = useState<any[]>([]);
+
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const iniciouRef = useRef(false);
 
@@ -81,6 +86,7 @@ export default function AdminPage() {
     if (aba === "clientes") return Boolean(p.pode_ver_clientes);
     if (aba === "financeiro") return Boolean(p.pode_cobrar_clientes);
     if (aba === "usuarios") return Boolean(p.pode_gerenciar_admins);
+    if (aba === "catalogo") return Boolean(p.pode_gerenciar_catalogo);
     if (aba === "instancias") return Boolean(p.pode_ver_instancias);
 
     return true;
@@ -90,6 +96,7 @@ export default function AdminPage() {
     if (p?.pode_ver_resumo) return "dashboard";
     if (p?.pode_ver_clientes) return "clientes";
     if (p?.pode_cobrar_clientes) return "financeiro";
+    if (p?.pode_gerenciar_catalogo) return "catalogo";
     if (p?.pode_gerenciar_admins) return "usuarios";
     if (p?.pode_ver_instancias) return "instancias";
 
@@ -145,6 +152,36 @@ export default function AdminPage() {
       if (!Array.isArray(data)) return;
 
       setInstancias(data);
+    } catch (error) {
+      console.log(error);
+    }
+  }, []);
+
+  const carregarCatalogo = useCallback(async (token: string) => {
+    try {
+      const res = await fetch("/api/admin/catalogo", {
+        headers: {
+          "x-admin-token": token,
+        },
+        cache: "no-store",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        console.log("ERRO CATALOGO:", data);
+        return;
+      }
+
+      const servicosRecebidos = data.servicos || [];
+
+      setServicos(servicosRecebidos);
+
+      const planosTodos = servicosRecebidos.flatMap(
+        (servico: any) => servico.planos || []
+      );
+
+      setPlanos(planosTodos);
     } catch (error) {
       console.log(error);
     }
@@ -207,8 +244,6 @@ export default function AdminPage() {
       const permissoesFinais =
         permissoesAdmin && Object.keys(permissoesAdmin).length > 0
           ? permissoesAdmin
-          : data.admin?.nivel === "dono"
-          ? PERMISSOES_TOTAIS
           : PERMISSOES_TOTAIS;
 
       setPermissoes(permissoesFinais);
@@ -218,6 +253,7 @@ export default function AdminPage() {
         carregarDashboard(token),
         carregarClientes(token),
         carregarInstancias(),
+        carregarCatalogo(token),
       ]);
 
       if (intervalRef.current) {
@@ -229,6 +265,7 @@ export default function AdminPage() {
           carregarDashboard(token),
           carregarClientes(token),
           carregarInstancias(),
+          carregarCatalogo(token),
         ]);
       }, 30000);
     } catch (error) {
@@ -243,6 +280,7 @@ export default function AdminPage() {
     carregarDashboard,
     carregarClientes,
     carregarInstancias,
+    carregarCatalogo,
     carregarPermissoes,
   ]);
 
@@ -293,6 +331,66 @@ export default function AdminPage() {
     } catch (error) {
       console.log(error);
     }
+  }
+
+  async function salvarServico(dados: any) {
+    try {
+      const res = await fetch("/api/admin/catalogo", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-token": adminToken,
+        },
+        body: JSON.stringify(dados),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        alert(data.error || "Erro ao salvar serviço.");
+        return;
+      }
+
+      alert("Serviço salvo.");
+      await carregarCatalogo(adminToken);
+    } catch (error) {
+      console.log(error);
+      alert("Erro ao salvar serviço.");
+    }
+  }
+
+  async function salvarPlano(dados: any) {
+    try {
+      const res = await fetch("/api/admin/catalogo", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-token": adminToken,
+        },
+        body: JSON.stringify(dados),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        alert(data.error || "Erro ao salvar plano.");
+        return;
+      }
+
+      alert("Plano salvo.");
+      await carregarCatalogo(adminToken);
+    } catch (error) {
+      console.log(error);
+      alert("Erro ao salvar plano.");
+    }
+  }
+
+  async function excluirServico(id: string) {
+    alert("A exclusão real de serviço será criada na próxima etapa.");
+  }
+
+  async function excluirPlano(id: string) {
+    alert("A exclusão real de plano será criada na próxima etapa.");
   }
 
   function mudarAba(aba: Aba) {
@@ -361,7 +459,23 @@ export default function AdminPage() {
         )}
 
         {abaAtiva === "financeiro" && podeAcessarAba("financeiro") && (
-          <AdminFinanceiro clientes={clientes} dashboard={dashboard} />
+          <AdminFinanceiro
+            clientes={clientes}
+            dashboard={dashboard}
+          />
+        )}
+
+        {abaAtiva === "catalogo" && podeAcessarAba("catalogo") && (
+          <AdminCatalogo
+            servicos={servicos}
+            planos={planos}
+            salvarServico={salvarServico}
+            salvarPlano={salvarPlano}
+            editarServico={() => {}}
+            editarPlano={() => {}}
+            excluirServico={excluirServico}
+            excluirPlano={excluirPlano}
+          />
         )}
 
         {abaAtiva === "usuarios" && podeAcessarAba("usuarios") && (
