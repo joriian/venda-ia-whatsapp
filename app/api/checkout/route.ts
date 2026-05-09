@@ -74,7 +74,10 @@ async function validarCupomCheckout({
     throw new Error("Cupom expirado");
   }
 
-  if (cupom.limite_usos && Number(cupom.usos_atuais || 0) >= Number(cupom.limite_usos)) {
+  if (
+    cupom.limite_usos &&
+    Number(cupom.usos_atuais || 0) >= Number(cupom.limite_usos)
+  ) {
     throw new Error("Cupom atingiu o limite de usos");
   }
 
@@ -170,7 +173,10 @@ export async function POST(req: Request) {
       .single();
 
     if (planoError || !plano) {
-      return NextResponse.json({ error: "Plano inválido" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Plano inválido" },
+        { status: 400 }
+      );
     }
 
     const { data: servico } = await supabase
@@ -181,7 +187,10 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (!servico) {
-      return NextResponse.json({ error: "Serviço inválido" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Serviço inválido" },
+        { status: 400 }
+      );
     }
 
     const valorOriginal = Number(plano.valor || 0);
@@ -202,7 +211,10 @@ export async function POST(req: Request) {
       descontoValor = cupomValidado.descontoValor;
       valorFinal = cupomValidado.valorFinal;
     } catch (error: any) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      return NextResponse.json(
+        { error: error.message },
+        { status: 400 }
+      );
     }
 
     if (valorFinal <= 0) {
@@ -228,10 +240,13 @@ export async function POST(req: Request) {
           senha,
           servico_id: servicoId,
           plano_id: plano.id,
+          plano_nome: plano.nome,
+          servico_nome: servico.nome,
           status: "aguardando_pagamento",
           termos_aceitos: true,
           termos_aceitos_em: new Date().toISOString(),
           cupom_codigo: cupom?.codigo || null,
+          updated_at: new Date().toISOString(),
         })
         .eq("id", clienteExistente.id)
         .select()
@@ -239,6 +254,7 @@ export async function POST(req: Request) {
 
       if (atualizarError || !atualizado) {
         console.log("ERRO ATUALIZAR CLIENTE:", atualizarError);
+
         return NextResponse.json(
           { error: "Erro ao atualizar cadastro" },
           { status: 500 }
@@ -258,16 +274,21 @@ export async function POST(req: Request) {
           senha,
           servico_id: servicoId,
           plano_id: plano.id,
+          plano_nome: plano.nome,
+          servico_nome: servico.nome,
           status: "aguardando_pagamento",
           termos_aceitos: true,
           termos_aceitos_em: new Date().toISOString(),
           cupom_codigo: cupom?.codigo || null,
+          criado_em: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         })
         .select()
         .single();
 
       if (clienteError || !criado) {
         console.log("ERRO CRIAR CLIENTE:", clienteError);
+
         return NextResponse.json(
           { error: "Erro ao criar cadastro" },
           { status: 500 }
@@ -283,6 +304,7 @@ export async function POST(req: Request) {
         servico_id: servicoId,
         plano_id: plano.id,
         status: "aguardando_pagamento",
+        evolution_status: "aguardando_pagamento",
         updated_at: new Date().toISOString(),
       },
       {
@@ -305,11 +327,14 @@ export async function POST(req: Request) {
             unit_price: Number(valorFinal.toFixed(2)),
           },
         ],
+
         payer: {
           email,
           name: nome,
         },
+
         external_reference: cliente.id,
+
         metadata: {
           cliente_id: cliente.id,
           servico_id: servico.id,
@@ -320,12 +345,15 @@ export async function POST(req: Request) {
           desconto_valor: descontoValor,
           cupom_codigo: cupom?.codigo || null,
         },
+
         back_urls: {
           success: `${siteUrl}/aguardando-pagamento?cliente=${cliente.id}`,
-          failure: `${siteUrl}/erro`,
+          failure: `${siteUrl}/aguardando-pagamento?cliente=${cliente.id}`,
           pending: `${siteUrl}/aguardando-pagamento?cliente=${cliente.id}`,
         },
+
         auto_return: "approved",
+
         notification_url: `${siteUrl}/api/webhook/mercadopago`,
       },
       {
