@@ -27,9 +27,7 @@ export function middleware(req: NextRequest) {
       return NextResponse.redirect(new URL("/admin/login", req.url));
     }
 
-    const jwtValido = validarJWT(adminToken);
-
-    if (!jwtValido) {
+    if (!validarJWT(adminToken)) {
       const response = NextResponse.redirect(new URL("/admin/login", req.url));
       response.cookies.delete("adminToken");
       return response;
@@ -41,9 +39,7 @@ export function middleware(req: NextRequest) {
       return NextResponse.redirect(new URL("/login", req.url));
     }
 
-    const jwtValido = validarJWT(clienteToken);
-
-    if (!jwtValido) {
+    if (!validarJWT(clienteToken)) {
       const response = NextResponse.redirect(new URL("/login", req.url));
       response.cookies.delete("clienteToken");
       response.cookies.delete("clienteRefreshToken");
@@ -51,20 +47,12 @@ export function middleware(req: NextRequest) {
     }
   }
 
-  if (pathname === "/login" && clienteToken) {
-    const jwtValido = validarJWT(clienteToken);
-
-    if (jwtValido) {
-      return NextResponse.redirect(new URL("/cliente", req.url));
-    }
+  if (pathname === "/login" && clienteToken && validarJWT(clienteToken)) {
+    return NextResponse.redirect(new URL("/cliente", req.url));
   }
 
-  if (pathname === "/" && clienteToken) {
-    const jwtValido = validarJWT(clienteToken);
-
-    if (jwtValido) {
-      return NextResponse.redirect(new URL("/cliente", req.url));
-    }
+  if (pathname === "/" && clienteToken && validarJWT(clienteToken)) {
+    return NextResponse.redirect(new URL("/cliente", req.url));
   }
 
   return NextResponse.next();

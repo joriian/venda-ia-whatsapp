@@ -9,7 +9,13 @@ const supabase = createClient(
 
 const JWT_SECRET = process.env.JWT_SECRET || "NEXORA_SECRET_2026";
 
-function limparCookie(status = 401, error = "Sessão inválida") {
+function pegarCookie(req: Request, nome: string) {
+  const cookie = req.headers.get("cookie") || "";
+  const match = cookie.match(new RegExp(`${nome}=([^;]+)`));
+  return match?.[1] || "";
+}
+
+function limparSessao(error = "Sessão inválida", status = 401) {
   const response = NextResponse.json({ error }, { status });
 
   response.cookies.set("adminToken", "", {
@@ -21,12 +27,6 @@ function limparCookie(status = 401, error = "Sessão inválida") {
   });
 
   return response;
-}
-
-function pegarCookie(req: Request, nome: string) {
-  const cookie = req.headers.get("cookie") || "";
-  const match = cookie.match(new RegExp(`${nome}=([^;]+)`));
-  return match?.[1] || "";
 }
 
 export async function POST(req: Request) {
@@ -45,13 +45,13 @@ export async function POST(req: Request) {
     }
 
     if (!token) {
-      return limparCookie(401, "Sessão inválida");
+      return limparSessao("Sessão inválida");
     }
 
     try {
       jwt.verify(token, JWT_SECRET);
     } catch {
-      return limparCookie(401, "Token inválido");
+      return limparSessao("Token inválido");
     }
 
     const { data: admin } = await supabase
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (!admin) {
-      return limparCookie(401, "Sessão não encontrada");
+      return limparSessao("Sessão não encontrada");
     }
 
     const expira = admin.session_expires_at
@@ -78,7 +78,7 @@ export async function POST(req: Request) {
         })
         .eq("id", admin.id);
 
-      return limparCookie(401, "Sessão expirada");
+      return limparSessao("Sessão expirada");
     }
 
     return NextResponse.json({
@@ -95,6 +95,6 @@ export async function POST(req: Request) {
   } catch (error: any) {
     console.log("ERRO ADMIN SESSAO:", error.message);
 
-    return limparCookie(500, "Erro ao validar sessão");
+    return limparSessao("Erro ao validar sessão", 500);
   }
 }

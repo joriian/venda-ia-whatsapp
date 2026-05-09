@@ -1,19 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export default function AdminLoginPage() {
   const [email, setEmail] = useState("admin@admin.com");
   const [senha, setSenha] = useState("");
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    const token = localStorage.getItem("adminToken");
-
-    if (token) {
-      window.location.href = "/admin";
-    }
-  }, []);
 
   async function entrar() {
     if (!email || !senha) {
@@ -24,6 +16,12 @@ export default function AdminLoginPage() {
     setLoading(true);
 
     try {
+      localStorage.removeItem("adminToken");
+      localStorage.removeItem("adminNome");
+      localStorage.removeItem("adminEmail");
+      localStorage.removeItem("adminNivel");
+      localStorage.removeItem("adminSessaoExpira");
+
       const res = await fetch("/api/admin/login", {
         method: "POST",
         headers: {
@@ -43,10 +41,10 @@ export default function AdminLoginPage() {
       localStorage.setItem("adminNome", data.admin.nome);
       localStorage.setItem("adminEmail", data.admin.email);
       localStorage.setItem("adminNivel", data.admin.nivel);
-      localStorage.setItem("adminSessaoExpira", data.expiresAt);
+      localStorage.setItem("adminSessaoExpira", data.expiresAt || "");
 
       window.location.href = "/admin";
-    } catch (error) {
+    } catch {
       alert("Erro ao fazer login");
     } finally {
       setLoading(false);
@@ -88,10 +86,6 @@ export default function AdminLoginPage() {
         >
           {loading ? "Entrando..." : "Entrar"}
         </button>
-
-        <p className="text-xs text-gray-500 mt-4 text-center">
-          Login inicial: admin@admin.com / Admin@123
-        </p>
       </div>
     </main>
   );
