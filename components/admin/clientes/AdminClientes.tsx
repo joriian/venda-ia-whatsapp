@@ -14,13 +14,77 @@ export default function AdminClientes({
   const [filtroStatus, setFiltroStatus] = useState("todos");
   const [carregandoId, setCarregandoId] = useState("");
 
+  function temPagamentoAprovado(cliente: any) {
+    return (cliente.pagamentos_cliente || []).some((pagamento: any) => {
+      const status = String(pagamento.status || "").toLowerCase();
+
+      return (
+        status === "approved" ||
+        status === "aprovado" ||
+        status === "paid" ||
+        status === "pago"
+      );
+    });
+  }
+
+  function estaVencido(cliente: any) {
+    if (!cliente.data_expiracao) return false;
+
+    const hoje = new Date();
+    const expiracao = new Date(cliente.data_expiracao);
+
+    hoje.setHours(0, 0, 0, 0);
+    expiracao.setHours(0, 0, 0, 0);
+
+    return expiracao < hoje;
+  }
+
+  function statusRealCliente(cliente: any) {
+    const statusOriginal = String(cliente.status || "").toLowerCase();
+
+    if (statusOriginal === "bloqueado") return "bloqueado";
+    if (statusOriginal === "suspenso") return "suspenso";
+
+    if (temPagamentoAprovado(cliente) && !estaVencido(cliente)) {
+      return "ativo";
+    }
+
+    if (estaVencido(cliente)) {
+      return "vencido";
+    }
+
+    if (
+      statusOriginal === "aguardando_pagamento" ||
+      statusOriginal === "pending" ||
+      statusOriginal === "pendente"
+    ) {
+      return "aguardando_pagamento";
+    }
+
+    return statusOriginal || "aguardando_pagamento";
+  }
+
+  const clientesNormalizados = useMemo(() => {
+    return (clientes || []).map((cliente: any) => {
+      const statusReal = statusRealCliente(cliente);
+
+      return {
+        ...cliente,
+        status_original: cliente.status,
+        status: statusReal,
+        status_real: statusReal,
+      };
+    });
+  }, [clientes]);
+
   const clientesFiltrados = useMemo(() => {
-    return clientes.filter((cliente: any) => {
+    return clientesNormalizados.filter((cliente: any) => {
       const texto = `
         ${cliente.nome || ""}
         ${cliente.email || ""}
         ${cliente.telefone || ""}
         ${cliente.status || ""}
+        ${cliente.status_original || ""}
       `.toLowerCase();
 
       const passouBusca = texto.includes(busca.toLowerCase());
@@ -30,7 +94,7 @@ export default function AdminClientes({
 
       return passouBusca && passouFiltro;
     });
-  }, [clientes, busca, filtroStatus]);
+  }, [clientesNormalizados, busca, filtroStatus]);
 
   async function acaoCliente(clienteId: string, acao: string) {
     try {
@@ -137,6 +201,21 @@ export default function AdminClientes({
     }
   }
 
+  const totalAtivos = clientesNormalizados.filter(
+    (c: any) => c.status === "ativo"
+  ).length;
+
+  const totalVencidos = clientesNormalizados.filter(
+    (c: any) => c.status === "vencido"
+  ).length;
+
+  const totalPendentes = clientesNormalizados.filter(
+    (c: any) =>
+      c.status === "aguardando_pagamento" ||
+      c.status === "bloqueado" ||
+      c.status === "suspenso"
+  ).length;
+
   return (
     <div className="space-y-6">
       <div className="bg-[#0D0D0D] border border-white/10 rounded-3xl p-6">
@@ -161,29 +240,13 @@ export default function AdminClientes({
       />
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-        <ResumoMini titulo="Total" valor={clientes.length} />
+        <ResumoMini titulo="Total" valor={clientesNormalizados.length} />
 
-        <ResumoMini
-          titulo="Ativos"
-          valor={clientes.filter((c: any) => c.status === "ativo").length}
-        />
+        <ResumoMini titulo="Ativos" valor={totalAtivos} />
 
-        <ResumoMini
-          titulo="Vencidos"
-          valor={clientes.filter((c: any) => c.status === "vencido").length}
-        />
+        <ResumoMini titulo="Vencidos" valor={totalVencidos} />
 
-        <ResumoMini
-          titulo="Pendentes"
-          valor={
-            clientes.filter(
-              (c: any) =>
-                c.status === "aguardando_pagamento" ||
-                c.status === "bloqueado" ||
-                c.status === "suspenso"
-            ).length
-          }
-        />
+        <ResumoMini titulo="Pendentes" valor={totalPendentes} />
       </div>
 
       <div className="space-y-5">
