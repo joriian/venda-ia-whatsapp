@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 
+import { registrarAuditoriaAdmin } from "@/lib/admin/auditoria";
+
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -195,6 +197,16 @@ export async function POST(req: Request) {
         );
       }
 
+      await registrarAuditoriaAdmin({
+        admin,
+        acao: "criou_servico",
+        entidade: "servico",
+        entidadeId: data.id,
+        descricao: `Criou serviço ${data.nome}`,
+        payload: data,
+        req,
+      });
+
       return NextResponse.json({
         ok: true,
         servico: data,
@@ -251,6 +263,16 @@ export async function POST(req: Request) {
         );
       }
 
+      await registrarAuditoriaAdmin({
+        admin,
+        acao: "editou_servico",
+        entidade: "servico",
+        entidadeId: data.id,
+        descricao: `Editou serviço ${data.nome}`,
+        payload: data,
+        req,
+      });
+
       return NextResponse.json({
         ok: true,
         servico: data,
@@ -301,6 +323,16 @@ export async function POST(req: Request) {
           { status: 500 }
         );
       }
+
+      await registrarAuditoriaAdmin({
+        admin,
+        acao: "criou_plano",
+        entidade: "plano",
+        entidadeId: data.id,
+        descricao: `Criou plano ${data.nome}`,
+        payload: data,
+        req,
+      });
 
       return NextResponse.json({
         ok: true,
@@ -353,6 +385,16 @@ export async function POST(req: Request) {
         );
       }
 
+      await registrarAuditoriaAdmin({
+        admin,
+        acao: "editou_plano",
+        entidade: "plano",
+        entidadeId: data.id,
+        descricao: `Editou plano ${data.nome}`,
+        payload: data,
+        req,
+      });
+
       return NextResponse.json({
         ok: true,
         plano: data,
@@ -399,6 +441,18 @@ export async function POST(req: Request) {
           { status: 500 }
         );
       }
+
+      await registrarAuditoriaAdmin({
+        admin,
+        acao: "excluiu_plano",
+        entidade: "plano",
+        entidadeId: planoId,
+        descricao: "Excluiu plano",
+        payload: {
+          planoId,
+        },
+        req,
+      });
 
       return NextResponse.json({
         ok: true,
@@ -477,6 +531,18 @@ export async function POST(req: Request) {
         );
       }
 
+      await registrarAuditoriaAdmin({
+        admin,
+        acao: "excluiu_servico",
+        entidade: "servico",
+        entidadeId: servicoId,
+        descricao: "Excluiu serviço",
+        payload: {
+          servicoId,
+        },
+        req,
+      });
+
       return NextResponse.json({
         ok: true,
         acao: "servico_excluido",
@@ -509,6 +575,16 @@ export async function POST(req: Request) {
           );
         }
 
+        await registrarAuditoriaAdmin({
+          admin,
+          acao: "editou_termos",
+          entidade: "termos",
+          entidadeId: data.id,
+          descricao: "Atualizou termos de uso",
+          payload: data,
+          req,
+        });
+
         return NextResponse.json({
           ok: true,
           termos: data,
@@ -534,6 +610,16 @@ export async function POST(req: Request) {
           { status: 500 }
         );
       }
+
+      await registrarAuditoriaAdmin({
+        admin,
+        acao: "criou_termos",
+        entidade: "termos",
+        entidadeId: data.id,
+        descricao: "Criou termos de uso",
+        payload: data,
+        req,
+      });
 
       return NextResponse.json({
         ok: true,
