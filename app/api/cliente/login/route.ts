@@ -15,7 +15,7 @@ const JWT_SECRET =
 function hashSenha(senha: string) {
   return crypto
     .createHash("sha256")
-    .update(senha)
+    .update(String(senha).trim())
     .digest("hex");
 }
 
@@ -35,28 +35,25 @@ function gerarAccessToken(cliente: any) {
 }
 
 function gerarRefreshToken() {
-  return crypto.randomBytes(64).toString("hex");
+  return crypto
+    .randomBytes(64)
+    .toString("hex");
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const email = String(
-      body.email || ""
-    )
+    const email = String(body.email || "")
       .trim()
       .toLowerCase();
 
-    const senha = String(
-      body.senha || ""
-    ).trim();
+    const senha = String(body.senha || "").trim();
 
     if (!email || !senha) {
       return NextResponse.json(
         {
-          error:
-            "Email e senha obrigatórios",
+          error: "Email e senha obrigatórios",
         },
         {
           status: 400,
@@ -64,18 +61,16 @@ export async function POST(req: Request) {
       );
     }
 
-    const { data: cliente, error } =
-      await supabase
-        .from("clientes_ia_whatsapp")
-        .select("*")
-        .eq("email", email)
-        .maybeSingle();
+    const { data: cliente, error } = await supabase
+      .from("clientes_ia_whatsapp")
+      .select("*")
+      .eq("email", email)
+      .maybeSingle();
 
     if (error || !cliente) {
       return NextResponse.json(
         {
-          error:
-            "Email ou senha inválidos",
+          error: "Email ou senha inválidos",
         },
         {
           status: 401,
@@ -83,20 +78,13 @@ export async function POST(req: Request) {
       );
     }
 
-    const senhaHash =
-      hashSenha(senha);
+    const senhaHash = hashSenha(senha);
+    const senhaBanco = String(cliente.senha_hash || "").trim();
 
-    const senhaBanco =
-      cliente.senha_hash || "";
-
-    const senhaValida =
-      senhaBanco === senhaHash;
-
-    if (!senhaValida) {
+    if (senhaBanco !== senhaHash) {
       return NextResponse.json(
         {
-          error:
-            "Email ou senha inválidos",
+          error: "Email ou senha inválidos",
         },
         {
           status: 401,
@@ -104,66 +92,50 @@ export async function POST(req: Request) {
       );
     }
 
-    const accessToken =
-      gerarAccessToken(cliente);
+    const accessToken = gerarAccessToken(cliente);
+    const refreshToken = gerarRefreshToken();
 
-    const refreshToken =
-      gerarRefreshToken();
+    const refreshExpires = new Date();
+    refreshExpires.setDate(refreshExpires.getDate() + 30);
 
-    const refreshExpires =
-      new Date();
-
-    refreshExpires.setDate(
-      refreshExpires.getDate() + 30
-    );
-
-    await supabase
-      .from(
-        "refresh_tokens_clientes"
-      )
+    const { error: refreshError } = await supabase
+      .from("refresh_tokens_clientes")
       .insert({
         cliente_id: cliente.id,
-        refresh_token:
-          refreshToken,
-        expires_at:
-          refreshExpires.toISOString(),
+        refresh_token: refreshToken,
+        expires_at: refreshExpires.toISOString(),
       });
 
-    const response =
-      NextResponse.json({
-        ok: true,
-        token: accessToken,
-        cliente: {
-          id: cliente.id,
-          nome: cliente.nome,
-          email: cliente.email,
-        },
-      });
+    if (refreshError) {
+      console.log("ERRO REFRESH CLIENTE:", refreshError.message);
+    }
 
-    response.cookies.set(
-      "clienteToken",
-      accessToken,
-      {
-        httpOnly: true,
-        secure: true,
-        sameSite: "lax",
-        path: "/",
-        maxAge: 60 * 60 * 12,
-      }
-    );
-
-    response.cookies.set(
-      "clienteRefreshToken",
+    const response = NextResponse.json({
+      ok: true,
+      token: accessToken,
       refreshToken,
-      {
-        httpOnly: true,
-        secure: true,
-        sameSite: "lax",
-        path: "/",
-        maxAge:
-          60 * 60 * 24 * 30,
-      }
-    );
+      cliente: {
+        id: cliente.id,
+        nome: cliente.nome,
+        email: cliente.email,
+      },
+    });
+
+    response.cookies.set("clienteToken", accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 12,
+    });
+
+    response.cookies.set("clienteRefreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30,
+    });
 
     return response;
   } catch (error) {
@@ -171,8 +143,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json(
       {
-        error:
-          "Erro interno no login",
+        error: "Erro interno no login",
       },
       {
         status: 500,
