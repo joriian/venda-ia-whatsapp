@@ -11,7 +11,10 @@ const supabase = createClient(
 const JWT_SECRET = process.env.JWT_SECRET || "NEXORA_SECRET_2026";
 
 function hashSenha(senha: string) {
-  return crypto.createHash("sha256").update(senha).digest("hex");
+  return crypto
+    .createHash("sha256")
+    .update(String(senha).trim())
+    .digest("hex");
 }
 
 function gerarAdminToken(admin: any) {
@@ -39,22 +42,30 @@ export async function POST(req: Request) {
 
     if (!emailTratado || !senhaTratada) {
       return NextResponse.json(
-        { error: "Email e senha são obrigatórios" },
-        { status: 400 }
+        {
+          error: "Email e senha são obrigatórios",
+        },
+        {
+          status: 400,
+        }
       );
     }
 
-    const { data: admin } = await supabase
+    const { data: admin, error } = await supabase
       .from("admin_users")
       .select("*")
       .ilike("email", emailTratado)
       .eq("ativo", true)
       .maybeSingle();
 
-    if (!admin) {
+    if (error || !admin) {
       return NextResponse.json(
-        { error: "Email ou senha incorretos" },
-        { status: 401 }
+        {
+          error: "Email ou senha incorretos",
+        },
+        {
+          status: 401,
+        }
       );
     }
 
@@ -63,21 +74,38 @@ export async function POST(req: Request) {
 
     if (senhaBanco !== senhaHash) {
       return NextResponse.json(
-        { error: "Email ou senha incorretos" },
-        { status: 401 }
+        {
+          error: "Email ou senha incorretos",
+        },
+        {
+          status: 401,
+        }
       );
     }
 
     const token = gerarAdminToken(admin);
     const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 12).toISOString();
 
-    await supabase
+    const { error: updateError } = await supabase
       .from("admin_users")
       .update({
         session_token: token,
         session_expires_at: expiresAt,
       })
       .eq("id", admin.id);
+
+    if (updateError) {
+      console.log("ERRO AO SALVAR SESSAO ADMIN:", updateError.message);
+
+      return NextResponse.json(
+        {
+          error: "Erro ao criar sessão admin",
+        },
+        {
+          status: 500,
+        }
+      );
+    }
 
     const response = NextResponse.json({
       ok: true,
@@ -104,8 +132,12 @@ export async function POST(req: Request) {
     console.log("ERRO ADMIN LOGIN:", error.message);
 
     return NextResponse.json(
-      { error: "Erro ao fazer login" },
-      { status: 500 }
+      {
+        error: "Erro ao fazer login",
+      },
+      {
+        status: 500,
+      }
     );
   }
 }
