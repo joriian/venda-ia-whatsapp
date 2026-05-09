@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import axios from "axios";
 import crypto from "crypto";
+import jwt from "jsonwebtoken";
 import { gerarInstanceName } from "@/lib/evolution-config";
 
 const supabase = createClient(
@@ -9,7 +10,25 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+const JWT_SECRET = process.env.JWT_SECRET || "NEXORA_SECRET_2026";
+
 async function validarCliente(token: string) {
+  if (!token) return null;
+
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+
+    if (decoded?.id && decoded?.tipo === "cliente") {
+      const { data } = await supabase
+        .from("clientes_ia_whatsapp")
+        .select("*")
+        .eq("id", decoded.id)
+        .maybeSingle();
+
+      if (data) return data;
+    }
+  } catch {}
+
   const { data } = await supabase
     .from("clientes_ia_whatsapp")
     .select("*")
@@ -22,33 +41,20 @@ async function validarCliente(token: string) {
     ? new Date(data.session_expires_at)
     : null;
 
-  if (!expira || expira < new Date()) return null;
+  if (expira && expira < new Date()) return null;
 
   return data;
 }
 
-async function buscarVinculoMesmoPlano(
-  clienteId: string,
-  servicoId: string,
-  planoId: string
-) {
-  const agora = new Date().toISOString();
-
-  const { data, error } = await supabase
+async function buscarServicoExistente(clienteId: string, servicoId: string) {
+  const { data } = await supabase
     .from("cliente_servicos")
     .select("*")
     .eq("cliente_id", clienteId)
     .eq("servico_id", servicoId)
-    .eq("plano_id", planoId)
-    .or(
-      `status.in.(ativo,aguardando_pagamento),checkout_expira_em.gte.${agora}`
-    )
+    .in("status", ["ativo", "aguardando_pagamento", "vencido"])
+    .order("created_at", { ascending: false })
     .limit(1);
-
-  if (error) {
-    console.log("ERRO BUSCAR VÍNCULO MESMO PLANO:", error.message);
-    return null;
-  }
 
   return data?.[0] || null;
 }
@@ -65,8 +71,10 @@ async function validarCupom(codigo: string | null) {
 
   if (!data) return null;
 
-  if (data.data_inicio && new Date(data.data_inicio) > new Date()) return null;
-  if (data.data_fim && new Date(data.data_fim) < new Date()) return null;
+  const agora = new Date();
+
+  if (data.data_inicio && new Date(data.data_inicio) > agora) return null;
+  if (data.data_fim && new Date(data.data_fim) < agora) return null;
 
   if (
     data.limite_usos &&
@@ -78,23 +86,81 @@ async function validarCupom(codigo: string | null) {
   return data;
 }
 
-function calcularValores(valor: number, cupom: any) {
+function diasDoPlano(plano: any) {
+  return Number(plano.meses || 1) * 30;
+}
+
+function calcularCreditoProporcional(vinculoAtual: any, planoAtual: any) {
+  if (!vinculoAtual?.data_expiracao || !planoAtual?.valor) {
+    return {
+      dias_restantes: 0,
+      credito: 0,
+    };
+  }
+
+  const agora = new Date();
+  const expira = new Date(vinculoAtual.data_expiracao);
+
+  if (expira <= agora) {
+    return {
+      dias_restantes: 0,
+      credito: 0,
+    };
+  }
+
+  const msRestantes = expira.getTime() - agora.getTime();
+  const diasRestantes = Math.ceil(msRestantes / (1000 * 60 * 60 * 24));
+
+  const valorPlanoAtual = Number(planoAtual.valor || 0);
+  const totalDias = diasDoPlano(planoAtual);
+
+  const valorDia = totalDias > 0 ? valorPlanoAtual / totalDias : 0;
+  const credito = Number((diasRestantes * valorDia).toFixed(2));
+
+  return {
+    dias_restantes: diasRestantes,
+    credito,
+  };
+}
+
+function calcularDescontoCupom(valor: number, cupom: any) {
+  if (!cupom) return 0;
+
   let desconto = 0;
 
-  if (cupom) {
-    if (cupom.tipo === "percentual") {
-      desconto = (valor * Number(cupom.valor || 0)) / 100;
-    } else {
-      desconto = Number(cupom.valor || 0);
-    }
+  if (cupom.tipo === "percentual") {
+    desconto = (valor * Number(cupom.valor || 0)) / 100;
+  } else {
+    desconto = Number(cupom.valor || 0);
   }
 
   if (desconto > valor) desconto = valor;
 
+  return Number(desconto.toFixed(2));
+}
+
+function calcularValores(params: {
+  valorPlanoNovo: number;
+  cupom: any;
+  creditoProporcional: number;
+}) {
+  const valorOriginal = Number(params.valorPlanoNovo || 0);
+  const credito = Math.min(valorOriginal, Number(params.creditoProporcional || 0));
+
+  const subtotal = Math.max(0, valorOriginal - credito);
+  const descontoCupom = calcularDescontoCupom(subtotal, params.cupom);
+
+  let valorFinal = Number((subtotal - descontoCupom).toFixed(2));
+
+  if (valorFinal <= 0) {
+    valorFinal = 0.01;
+  }
+
   return {
-    valor_original: valor,
-    desconto_valor: desconto,
-    valor_final: Number((valor - desconto).toFixed(2)),
+    valor_original: valorOriginal,
+    credito_proporcional: credito,
+    desconto_valor: descontoCupom,
+    valor_final: valorFinal,
   };
 }
 
@@ -102,49 +168,46 @@ async function criarOuAtualizarVinculoPendente(params: {
   cliente: any;
   servico: any;
   plano: any;
+  vinculoExistente: any;
+  tipoMovimento: string;
 }) {
-  const { cliente, servico, plano } = params;
+  const { cliente, servico, plano, vinculoExistente, tipoMovimento } = params;
 
-  const instanceName = gerarInstanceName(
-    cliente.id,
-    servico.slug || servico.nome || "servico"
-  );
+  const instanceName =
+    vinculoExistente?.instance_name ||
+    gerarInstanceName(cliente.id, servico.slug || servico.nome || "servico");
 
-  const checkoutExpiraEm = new Date(
-    Date.now() + 30 * 60 * 1000
-  ).toISOString();
+  const checkoutExpiraEm = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
-  const { data: existente } = await supabase
-    .from("cliente_servicos")
-    .select("*")
-    .eq("cliente_id", cliente.id)
-    .eq("servico_id", servico.id)
-    .eq("plano_id", plano.id)
-    .limit(1);
-
-  if (existente && existente.length > 0) {
-    const vinculo = existente[0];
-
-    const { error } = await supabase
+  if (vinculoExistente?.id) {
+    const { data, error } = await supabase
       .from("cliente_servicos")
       .update({
-        status: vinculo.status || "aguardando_pagamento",
+        plano_id: plano.id,
+        status:
+          vinculoExistente.status === "ativo"
+            ? "ativo"
+            : "aguardando_pagamento",
         checkout_expira_em: checkoutExpiraEm,
         workflow_id: servico.workflow_id || null,
         webhook_url: servico.webhook_url || null,
         instance_name: instanceName,
+        movimento_checkout: tipoMovimento,
+        plano_checkout_id: plano.id,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", vinculo.id);
+      .eq("id", vinculoExistente.id)
+      .select("id")
+      .single();
 
     if (error) {
-      throw new Error(`Erro ao atualizar vínculo pendente: ${error.message}`);
+      throw new Error(`Erro ao atualizar vínculo: ${error.message}`);
     }
 
-    return vinculo.id;
+    return data.id;
   }
 
-  const { data: novo, error } = await supabase
+  const { data, error } = await supabase
     .from("cliente_servicos")
     .insert({
       id: crypto.randomUUID(),
@@ -160,6 +223,8 @@ async function criarOuAtualizarVinculoPendente(params: {
       evolution_status: "aguardando_pagamento",
       evolution_configurado: false,
       checkout_expira_em: checkoutExpiraEm,
+      movimento_checkout: tipoMovimento,
+      plano_checkout_id: plano.id,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -167,10 +232,10 @@ async function criarOuAtualizarVinculoPendente(params: {
     .single();
 
   if (error) {
-    throw new Error(`Erro ao criar vínculo pendente: ${error.message}`);
+    throw new Error(`Erro ao criar vínculo: ${error.message}`);
   }
 
-  return novo.id;
+  return data.id;
 }
 
 export async function POST(req: Request) {
@@ -178,9 +243,9 @@ export async function POST(req: Request) {
     const body = await req.json();
 
     const token = body.token;
-    const servicoId = body.servico_id;
-    const planoId = body.plano_id;
-    const cupomCodigo = body.cupom_codigo || null;
+    const servicoId = body.servico_id || body.servicoId;
+    const planoId = body.plano_id || body.planoId;
+    const cupomCodigo = body.cupom_codigo || body.cupomCodigo || null;
 
     if (!token) {
       return NextResponse.json({ error: "Sessão inválida" }, { status: 401 });
@@ -191,25 +256,25 @@ export async function POST(req: Request) {
     if (!cliente) {
       return NextResponse.json({ error: "Sessão expirada" }, { status: 401 });
     }
-	
-	if (!cliente.telefone_verificado) {
-  return NextResponse.json(
-    {
-      error:
-        "Antes de contratar, verifique seu número de WhatsApp na área do cliente.",
-    },
-    { status: 403 }
-  );
-}
 
-if (cliente.status === "bloqueado") {
-  return NextResponse.json(
-    {
-      error: "Sua conta está bloqueada. Entre em contato com o suporte.",
-    },
-    { status: 403 }
-  );
-}
+    if (!cliente.telefone_verificado) {
+      return NextResponse.json(
+        {
+          error:
+            "Antes de contratar, verifique seu número de WhatsApp na área do cliente.",
+        },
+        { status: 403 }
+      );
+    }
+
+    if (cliente.status === "bloqueado") {
+      return NextResponse.json(
+        {
+          error: "Sua conta está bloqueada. Entre em contato com o suporte.",
+        },
+        { status: 403 }
+      );
+    }
 
     if (!servicoId || !planoId) {
       return NextResponse.json(
@@ -232,7 +297,7 @@ if (cliente.status === "bloqueado") {
       );
     }
 
-    const { data: plano } = await supabase
+    const { data: planoNovo } = await supabase
       .from("planos")
       .select("*")
       .eq("id", planoId)
@@ -240,43 +305,52 @@ if (cliente.status === "bloqueado") {
       .eq("ativo", true)
       .maybeSingle();
 
-    if (!plano) {
+    if (!planoNovo) {
       return NextResponse.json(
         { error: "Plano não encontrado ou inativo" },
         { status: 404 }
       );
     }
 
-    const vinculoMesmoPlano = await buscarVinculoMesmoPlano(
-      cliente.id,
-      servico.id,
-      plano.id
-    );
+    const vinculoExistente = await buscarServicoExistente(cliente.id, servico.id);
 
-    if (vinculoMesmoPlano) {
-      return NextResponse.json(
-        {
-          error:
-            "Você já possui este mesmo plano ativo ou com pagamento em andamento. Escolha outro plano do serviço.",
-        },
-        { status: 409 }
-      );
+    let tipoMovimento = "nova_contratacao";
+    let creditoProporcional = 0;
+    let diasRestantes = 0;
+
+    if (vinculoExistente?.id) {
+      if (vinculoExistente.plano_id === planoNovo.id) {
+        tipoMovimento = "renovacao";
+      } else {
+        tipoMovimento = "troca_plano";
+
+        const { data: planoAtual } = await supabase
+          .from("planos")
+          .select("*")
+          .eq("id", vinculoExistente.plano_id)
+          .maybeSingle();
+
+        const credito = calcularCreditoProporcional(vinculoExistente, planoAtual);
+
+        creditoProporcional = credito.credito;
+        diasRestantes = credito.dias_restantes;
+      }
     }
 
     const cupom = await validarCupom(cupomCodigo);
-    const valores = calcularValores(Number(plano.valor || 0), cupom);
 
-    if (valores.valor_final <= 0) {
-      return NextResponse.json(
-        { error: "Valor final inválido" },
-        { status: 400 }
-      );
-    }
+    const valores = calcularValores({
+      valorPlanoNovo: Number(planoNovo.valor || 0),
+      cupom,
+      creditoProporcional,
+    });
 
     const clienteServicoId = await criarOuAtualizarVinculoPendente({
       cliente,
       servico,
-      plano,
+      plano: planoNovo,
+      vinculoExistente,
+      tipoMovimento,
     });
 
     const appUrl =
@@ -284,12 +358,19 @@ if (cliente.status === "bloqueado") {
       process.env.NEXT_PUBLIC_SITE_URL ||
       "";
 
+    const titulo =
+      tipoMovimento === "nova_contratacao"
+        ? `${servico.nome} - ${planoNovo.nome}`
+        : tipoMovimento === "renovacao"
+        ? `Renovação - ${servico.nome} - ${planoNovo.nome}`
+        : `Troca de plano - ${servico.nome} - ${planoNovo.nome}`;
+
     const preferenceBody = {
       items: [
         {
-          id: plano.id,
-          title: `${servico.nome} - ${plano.nome}`,
-          description: plano.descricao || servico.descricao || "",
+          id: planoNovo.id,
+          title: titulo,
+          description: planoNovo.descricao || servico.descricao || "",
           quantity: 1,
           currency_id: "BRL",
           unit_price: valores.valor_final,
@@ -305,8 +386,11 @@ if (cliente.status === "bloqueado") {
         cliente_id: cliente.id,
         cliente_servico_id: clienteServicoId,
         servico_id: servico.id,
-        plano_id: plano.id,
-        meses: plano.meses,
+        plano_id: planoNovo.id,
+        meses: planoNovo.meses,
+        tipo_movimento: tipoMovimento,
+        dias_restantes_credito: diasRestantes,
+        credito_proporcional: valores.credito_proporcional,
         valor_original: valores.valor_original,
         desconto_valor: valores.desconto_valor,
         cupom_codigo: cupom?.codigo || null,
@@ -315,12 +399,14 @@ if (cliente.status === "bloqueado") {
         telefone: cliente.telefone || null,
       },
 
-      notification_url: process.env.MERCADOPAGO_WEBHOOK_URL,
+      notification_url:
+        process.env.MERCADOPAGO_WEBHOOK_URL ||
+        `${appUrl}/api/webhook/mercadopago`,
 
       back_urls: {
-        success: `${appUrl}/cliente?sucesso=1`,
-        pending: `${appUrl}/cliente?pendente=1`,
-        failure: `${appUrl}/cliente?erro=1`,
+        success: `${appUrl}/aguardando-pagamento?cliente=${cliente.id}`,
+        pending: `${appUrl}/aguardando-pagamento?cliente=${cliente.id}`,
+        failure: `${appUrl}/aguardando-pagamento?cliente=${cliente.id}`,
       },
 
       auto_return: "approved",
@@ -352,6 +438,8 @@ if (cliente.status === "bloqueado") {
       sandbox_init_point: response.data.sandbox_init_point,
       preference_id: response.data.id,
       cliente_servico_id: clienteServicoId,
+      tipo_movimento: tipoMovimento,
+      dias_restantes_credito: diasRestantes,
       valores,
     });
   } catch (error: any) {
