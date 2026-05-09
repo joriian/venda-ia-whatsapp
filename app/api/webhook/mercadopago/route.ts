@@ -6,6 +6,9 @@ import crypto from "crypto";
 import {
   configurarInstanciaCompleta,
   gerarInstanceName,
+  instanciaExiste,
+  reiniciarInstanciaEvolution,
+  criarInstanciaEvolution,
 } from "@/lib/evolution-config";
 
 import { notificarPagamentoAprovado } from "@/lib/notificacoes";
@@ -132,7 +135,7 @@ async function buscarOuCriarCliente(payment: MpPayment) {
       telefone:
         metadata.telefone ||
         "Não informado",
-      status: "aguardando_pagamento",
+      status: "ativo",
       criado_em: new Date().toISOString(),
     })
     .select("*")
@@ -181,11 +184,6 @@ async function registrarPagamento(params: {
 
   const status = traduzirStatusPagamento(statusMp);
 
-  const valor = Number(
-    params.payment.transaction_amount ||
-      0
-  );
-
   const registro = {
     cliente_id: params.clienteId,
     cliente_servico_id:
@@ -196,22 +194,17 @@ async function registrarPagamento(params: {
     servico_id: params.servicoId,
     status,
     status_mp: statusMp,
-    valor,
+    valor: Number(params.payment.transaction_amount || 0),
     valor_original:
-      params.metadata.valor_original ||
-      valor,
+      params.metadata.valor_original || 0,
     desconto_valor:
-      params.metadata.desconto_valor ||
-      0,
+      params.metadata.desconto_valor || 0,
     credito_proporcional:
-      params.metadata.credito_proporcional ||
-      0,
+      params.metadata.credito_proporcional || 0,
     tipo_movimento:
-      params.metadata.tipo_movimento ||
-      "nova_contratacao",
+      params.metadata.tipo_movimento || "nova_contratacao",
     cupom_codigo:
-      params.metadata.cupom_codigo ||
-      null,
+      params.metadata.cupom_codigo || null,
     criado_em:
       params.payment.date_approved ||
       new Date().toISOString(),
@@ -219,17 +212,27 @@ async function registrarPagamento(params: {
 
   const { data: existente } = await supabase
     .from("pagamentos_ia_whatsapp")
-    .select("id")
+    .select("id,status")
     .eq("payment_id", paymentId)
     .maybeSingle();
 
   if (existente?.id) {
+    if (existente.status === "aprovado") {
+      return {
+        jaProcessado: true,
+        id: existente.id,
+      };
+    }
+
     await supabase
       .from("pagamentos_ia_whatsapp")
       .update(registro)
       .eq("id", existente.id);
 
-    return existente.id;
+    return {
+      jaProcessado: false,
+      id: existente.id,
+    };
   }
 
   const { data } = await supabase
@@ -238,7 +241,10 @@ async function registrarPagamento(params: {
     .select("id")
     .single();
 
-  return data?.id;
+  return {
+    jaProcessado: false,
+    id: data?.id,
+  };
 }
 
 async function ativarServico(params: {
@@ -249,16 +255,13 @@ async function ativarServico(params: {
 }) {
   const { cliente, servico, plano, metadata } = params;
 
-  const clienteServicoId =
-    metadata.cliente_servico_id || null;
-
   let vinculo = null;
 
-  if (clienteServicoId) {
+  if (metadata.cliente_servico_id) {
     const { data } = await supabase
       .from("cliente_servicos")
       .select("*")
-      .eq("id", clienteServicoId)
+      .eq("id", metadata.cliente_servico_id)
       .maybeSingle();
 
     vinculo = data;
@@ -283,45 +286,30 @@ async function ativarServico(params: {
     vinculo?.instance_name ||
     gerarInstanceName(
       cliente.id,
-      servico.slug ||
-        servico.nome ||
-        "servico"
+      servico.slug || servico.nome || "servico"
     );
 
-  const novaExpiracao =
-    calcularNovaExpiracao(
-      vinculo?.data_expiracao,
-      Number(
-        metadata.meses ||
-          plano.meses ||
-          1
-      )
-    );
-
-  const dataInicio =
-    vinculo?.data_inicio ||
-    new Date().toISOString();
+  const novaExpiracao = calcularNovaExpiracao(
+    vinculo?.data_expiracao,
+    Number(metadata.meses || plano.meses || 1)
+  );
 
   const payload = {
     plano_id: plano.id,
     status: "ativo",
-    data_inicio: dataInicio,
-    data_expiracao:
-      novaExpiracao.toISOString(),
-    workflow_id:
-      servico.workflow_id || null,
-    webhook_url:
-      servico.webhook_url || null,
-    evolution_status:
-      vinculo?.evolution_status ||
-      "connecting",
-    instance_name: instanceName,
-    updated_at:
+    data_inicio:
+      vinculo?.data_inicio ||
       new Date().toISOString(),
+    data_expiracao: novaExpiracao.toISOString(),
+    workflow_id: servico.workflow_id || null,
+    webhook_url: servico.webhook_url || null,
+    evolution_status: "connecting",
+    evolution_configurado: true,
+    instance_name: instanceName,
+    updated_at: new Date().toISOString(),
   };
 
-  let finalClienteServicoId =
-    vinculo?.id || null;
+  let clienteServicoId = vinculo?.id || null;
 
   if (vinculo?.id) {
     await supabase
@@ -329,43 +317,36 @@ async function ativarServico(params: {
       .update(payload)
       .eq("id", vinculo.id);
 
-    finalClienteServicoId =
-      vinculo.id;
+    clienteServicoId = vinculo.id;
   } else {
     const { data } = await supabase
       .from("cliente_servicos")
       .insert({
         cliente_id: cliente.id,
         servico_id: servico.id,
-        evolution_configurado: false,
-        created_at:
-          new Date().toISOString(),
+        created_at: new Date().toISOString(),
         ...payload,
       })
       .select("*")
       .single();
 
-    finalClienteServicoId =
-      data?.id || null;
+    clienteServicoId = data?.id || null;
   }
 
   return {
-    clienteServicoId:
-      finalClienteServicoId,
+    clienteServicoId,
     instanceName,
     novaExpiracao,
+    reativado:
+      vinculo?.status === "bloqueado" ||
+      vinculo?.status === "vencido",
   };
 }
 
 function normalizarEventosEvolution(servico: any) {
-  if (
-    Array.isArray(
-      servico?.evolution_events
-    )
-  ) {
-    return servico.evolution_events.map(
-      (e: string) =>
-        String(e).toUpperCase()
+  if (Array.isArray(servico?.evolution_events)) {
+    return servico.evolution_events.map((e: string) =>
+      String(e).toUpperCase()
     );
   }
 
@@ -375,7 +356,7 @@ function normalizarEventosEvolution(servico: any) {
   ];
 }
 
-async function configurarEvolution(params: {
+async function garantirEvolution(params: {
   cliente: any;
   servico: any;
   clienteServicoId: string;
@@ -388,6 +369,14 @@ async function configurarEvolution(params: {
     instanceName,
   } = params;
 
+  const existe = await instanciaExiste(instanceName);
+
+  if (!existe) {
+    await criarInstanciaEvolution(instanceName);
+  } else {
+    await reiniciarInstanciaEvolution(instanceName);
+  }
+
   const webhookUrl =
     servico.webhook_url ||
     process.env.DEFAULT_N8N_WEBHOOK_URL;
@@ -395,78 +384,38 @@ async function configurarEvolution(params: {
   if (!webhookUrl) {
     return {
       ok: false,
-      motivo:
-        "Webhook não configurado",
+      motivo: "Webhook não configurado",
     };
   }
 
-  const config =
-    await configurarInstanciaCompleta({
-      clienteId: cliente.id,
-      servicoSlug:
-        servico.slug ||
-        servico.nome,
-      webhookUrl,
-      events:
-        normalizarEventosEvolution(
-          servico
-        ),
-      webhookEnabled:
-        servico.evolution_webhook_enabled ??
-        true,
-      webhookBase64:
-        servico.evolution_webhook_base64 ??
-        true,
-    });
-
-  const finalInstanceName =
-    config.instanceName ||
-    instanceName;
+  const config = await configurarInstanciaCompleta({
+    clienteId: cliente.id,
+    servicoSlug:
+      servico.slug || servico.nome,
+    webhookUrl,
+    events: normalizarEventosEvolution(servico),
+    webhookEnabled:
+      servico.evolution_webhook_enabled ?? true,
+    webhookBase64:
+      servico.evolution_webhook_base64 ?? true,
+  });
 
   await supabase
     .from("cliente_servicos")
     .update({
-      instance_name:
-        finalInstanceName,
+      instance_name: instanceName,
+      evolution_status: "connecting",
       evolution_configurado: true,
       evolution_configurado_em:
         new Date().toISOString(),
-      evolution_status:
-        "connecting",
-      updated_at:
-        new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     })
     .eq("id", clienteServicoId);
 
-  await supabase
-    .from("instancias_evolution")
-    .upsert(
-      {
-        cliente_id: cliente.id,
-        servico_id: servico.id,
-        cliente_servico_id:
-          clienteServicoId,
-        instance_name:
-          finalInstanceName,
-        webhook_url: webhookUrl,
-        workflow_id:
-          servico.workflow_id || null,
-        servico_nome:
-          servico.nome,
-        status: "connecting",
-        updated_at:
-          new Date().toISOString(),
-      },
-      {
-        onConflict:
-          "cliente_id,servico_id",
-      }
-    );
-
   return {
-    ...config,
-    instanceName:
-      finalInstanceName,
+    ok: true,
+    instanceName,
+    config,
   };
 }
 
@@ -474,13 +423,9 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    console.log(
-      "WEBHOOK MERCADO PAGO:",
-      body
-    );
+    console.log("WEBHOOK MP:", body);
 
-    const paymentId =
-      extrairPaymentId(body);
+    const paymentId = extrairPaymentId(body);
 
     if (!paymentId) {
       return NextResponse.json({
@@ -490,97 +435,83 @@ export async function POST(req: Request) {
     }
 
     const payment =
-      await buscarPagamentoMercadoPago(
-        paymentId
-      );
+      await buscarPagamentoMercadoPago(paymentId);
 
-    const metadata =
-      payment.metadata || {};
+    const metadata = payment.metadata || {};
 
     const statusPagamento =
-      normalizarStatusPagamento(
-        payment.status
-      );
+      normalizarStatusPagamento(payment.status);
 
     const cliente =
-      await buscarOuCriarCliente(
-        payment
-      );
+      await buscarOuCriarCliente(payment);
 
-    const plano =
-      await buscarPlano(
-        metadata.plano_id
-      );
+    const plano = await buscarPlano(metadata.plano_id);
 
     if (!plano) {
       return NextResponse.json(
         {
-          error:
-            "Plano não encontrado",
+          error: "Plano não encontrado",
         },
         { status: 404 }
       );
     }
 
-    const servico =
-      await buscarServico(
-        metadata.servico_id
-      );
+    const servico = await buscarServico(
+      metadata.servico_id
+    );
 
     if (!servico) {
       return NextResponse.json(
         {
-          error:
-            "Serviço não encontrado",
+          error: "Serviço não encontrado",
         },
         { status: 404 }
       );
     }
 
-    await registrarPagamento({
+    const pagamento = await registrarPagamento({
       clienteId: cliente.id,
       clienteServicoId:
-        metadata.cliente_servico_id ||
-        null,
+        metadata.cliente_servico_id || null,
       payment,
       planoId: plano.id,
       servicoId: servico.id,
       metadata,
     });
 
-    if (
-      statusPagamento !==
-      "approved"
-    ) {
+    if (pagamento.jaProcessado) {
       return NextResponse.json({
         ok: true,
-        status:
-          traduzirStatusPagamento(
-            statusPagamento
-          ),
+        duplicado: true,
       });
     }
 
-    const ativacao =
-      await ativarServico({
-        cliente,
-        servico,
-        plano,
-        metadata,
+    if (statusPagamento !== "approved") {
+      return NextResponse.json({
+        ok: true,
+        status:
+          traduzirStatusPagamento(statusPagamento),
       });
+    }
+
+    const ativacao = await ativarServico({
+      cliente,
+      servico,
+      plano,
+      metadata,
+    });
 
     let evolution = null;
 
     try {
-      evolution =
-        await configurarEvolution({
-          cliente,
-          servico,
-          clienteServicoId:
-            ativacao.clienteServicoId,
-          instanceName:
-            ativacao.instanceName,
-        });
+      evolution = await garantirEvolution({
+        cliente,
+        servico,
+        clienteServicoId:
+          ativacao.clienteServicoId,
+        instanceName:
+          ativacao.instanceName,
+      });
     } catch (error: any) {
       evolution = {
         ok: false,
@@ -594,29 +525,22 @@ export async function POST(req: Request) {
       .from("clientes_ia_whatsapp")
       .update({
         status: "ativo",
-        updated_at:
-          new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
       .eq("id", cliente.id);
 
-    if (
-      ativacao.clienteServicoId
-    ) {
-      await notificarPagamentoAprovado(
-        {
-          cliente_id: cliente.id,
-          cliente_servico_id:
-            ativacao.clienteServicoId,
-        }
-      );
+    if (ativacao.clienteServicoId) {
+      await notificarPagamentoAprovado({
+        cliente_id: cliente.id,
+        cliente_servico_id:
+          ativacao.clienteServicoId,
+      });
     }
 
     return NextResponse.json({
       ok: true,
       status: "aprovado",
-      tipo_movimento:
-        metadata.tipo_movimento ||
-        "nova_contratacao",
+      reativado: ativacao.reativado,
       cliente_id: cliente.id,
       servico_id: servico.id,
       plano_id: plano.id,
@@ -630,7 +554,7 @@ export async function POST(req: Request) {
     });
   } catch (error: any) {
     console.log(
-      "ERRO WEBHOOK MERCADO PAGO:",
+      "ERRO WEBHOOK MP:",
       error?.response?.data ||
         error?.message ||
         error
@@ -638,8 +562,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json(
       {
-        error:
-          "Erro no webhook Mercado Pago",
+        error: "Erro no webhook Mercado Pago",
         detalhe:
           error?.response?.data ||
           error?.message ||
@@ -653,7 +576,6 @@ export async function POST(req: Request) {
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    rota:
-      "webhook mercado pago ativo",
+    rota: "webhook mercado pago ativo",
   });
 }
