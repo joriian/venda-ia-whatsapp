@@ -32,7 +32,9 @@ async function validarAdmin(req: Request) {
 
 function normalizarEventos(eventos: any) {
   if (Array.isArray(eventos)) {
-    return eventos.map((e) => String(e).trim().toUpperCase()).filter(Boolean);
+    return eventos
+      .map((e) => String(e).trim().toUpperCase())
+      .filter(Boolean);
   }
 
   if (typeof eventos === "string") {
@@ -60,7 +62,10 @@ export async function GET(req: Request) {
     const admin = await validarAdmin(req);
 
     if (!admin) {
-      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Não autorizado" },
+        { status: 401 }
+      );
     }
 
     const { data: servicos, error: servicosError } = await supabase
@@ -126,7 +131,20 @@ export async function POST(req: Request) {
     const admin = await validarAdmin(req);
 
     if (!admin) {
-      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Não autorizado" },
+        { status: 401 }
+      );
+    }
+
+    if (
+      admin.nivel !== "dono" &&
+      admin.nivel !== "admin"
+    ) {
+      return NextResponse.json(
+        { error: "Sem permissão para gerenciar catálogo" },
+        { status: 403 }
+      );
     }
 
     const body = await req.json();
@@ -151,14 +169,14 @@ export async function POST(req: Request) {
         descricao: body.descricao || "",
         ativo: body.ativo ?? true,
         ordem: Number(body.ordem || 0),
-
         workflow_id: body.workflow_id || null,
         webhook_url: body.webhook_url || null,
         workflow_tipo: body.workflow_tipo || "whatsapp",
-
         evolution_events: normalizarEventos(body.evolution_events),
-        evolution_webhook_enabled: body.evolution_webhook_enabled ?? true,
-        evolution_webhook_base64: body.evolution_webhook_base64 ?? true,
+        evolution_webhook_enabled:
+          body.evolution_webhook_enabled ?? true,
+        evolution_webhook_base64:
+          body.evolution_webhook_base64 ?? true,
       };
 
       const { data, error } = await supabase
@@ -206,14 +224,14 @@ export async function POST(req: Request) {
         descricao: body.descricao || "",
         ativo: body.ativo ?? true,
         ordem: Number(body.ordem || 0),
-
         workflow_id: body.workflow_id || null,
         webhook_url: body.webhook_url || null,
         workflow_tipo: body.workflow_tipo || "whatsapp",
-
         evolution_events: normalizarEventos(body.evolution_events),
-        evolution_webhook_enabled: body.evolution_webhook_enabled ?? true,
-        evolution_webhook_base64: body.evolution_webhook_base64 ?? true,
+        evolution_webhook_enabled:
+          body.evolution_webhook_enabled ?? true,
+        evolution_webhook_base64:
+          body.evolution_webhook_base64 ?? true,
       };
 
       const { data, error } = await supabase
@@ -341,6 +359,130 @@ export async function POST(req: Request) {
       });
     }
 
+    if (acao === "excluir_plano") {
+      const planoId = String(body.id || "").trim();
+
+      if (!planoId) {
+        return NextResponse.json(
+          { error: "ID do plano é obrigatório" },
+          { status: 400 }
+        );
+      }
+
+      const { data: usados } = await supabase
+        .from("cliente_servicos")
+        .select("id")
+        .eq("plano_id", planoId)
+        .limit(1);
+
+      if (usados && usados.length > 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Este plano está vinculado a cliente. Desative o plano em vez de excluir.",
+          },
+          { status: 400 }
+        );
+      }
+
+      const { error } = await supabase
+        .from("planos")
+        .delete()
+        .eq("id", planoId);
+
+      if (error) {
+        return NextResponse.json(
+          {
+            error: "Erro ao excluir plano",
+            detalhe: error.message,
+          },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({
+        ok: true,
+        acao: "plano_excluido",
+      });
+    }
+
+    if (acao === "excluir_servico") {
+      const servicoId = String(body.id || "").trim();
+
+      if (!servicoId) {
+        return NextResponse.json(
+          { error: "ID do serviço é obrigatório" },
+          { status: 400 }
+        );
+      }
+
+      const { data: clientesUsando } = await supabase
+        .from("cliente_servicos")
+        .select("id")
+        .eq("servico_id", servicoId)
+        .limit(1);
+
+      if (clientesUsando && clientesUsando.length > 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Este serviço está vinculado a cliente. Desative o serviço em vez de excluir.",
+          },
+          { status: 400 }
+        );
+      }
+
+      const { data: planosDoServico } = await supabase
+        .from("planos")
+        .select("id")
+        .eq("servico_id", servicoId);
+
+      if (planosDoServico && planosDoServico.length > 0) {
+        const planoIds = planosDoServico.map((p: any) => p.id);
+
+        const { data: planosUsados } = await supabase
+          .from("cliente_servicos")
+          .select("id")
+          .in("plano_id", planoIds)
+          .limit(1);
+
+        if (planosUsados && planosUsados.length > 0) {
+          return NextResponse.json(
+            {
+              error:
+                "Existe plano deste serviço vinculado a cliente. Desative o serviço em vez de excluir.",
+            },
+            { status: 400 }
+          );
+        }
+      }
+
+      await supabase
+        .from("planos")
+        .delete()
+        .eq("servico_id", servicoId);
+
+      const { error } = await supabase
+        .from("servicos_ia")
+        .delete()
+        .eq("id", servicoId);
+
+      if (error) {
+        return NextResponse.json(
+          {
+            error: "Erro ao excluir serviço",
+            detalhe: error.message,
+          },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({
+        ok: true,
+        acao: "servico_excluido",
+      });
+    }
+
     if (acao === "atualizar_termos") {
       const payload = {
         titulo: body.titulo || "Termos de uso",
@@ -400,9 +542,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json(
-      {
-        error: "Ação inválida",
-      },
+      { error: "Ação inválida" },
       { status: 400 }
     );
   } catch (error: any) {
