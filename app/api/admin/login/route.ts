@@ -124,17 +124,13 @@ export async function POST(req: Request) {
         },
       });
 
-    response.cookies.set(
-      "adminToken",
-      token,
-      {
-        httpOnly: true,
-        secure: true,
-        sameSite: "lax",
-        path: "/",
-        maxAge: 60 * 60 * 12,
-      }
-    );
+response.cookies.set("adminToken", token, {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax",
+  path: "/",
+  maxAge: 60 * 60 * 12,
+});
 
     return response;
   } catch (error: any) {
