@@ -1,6 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import {
+  LayoutDashboard,
+  Users,
+  Server,
+  Bell,
+  ShieldCheck,
+  Activity,
+  LogOut,
+  RefreshCcw,
+  QrCode,
+  Power,
+  RotateCw,
+} from "lucide-react";
+
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
+
 import { useRouter } from "next/navigation";
 
 import AdminLogs from "@/components/admin/AdminLogs";
@@ -17,12 +38,12 @@ export default function AdminPage() {
   const [adminToken, setAdminToken] = useState("");
   const [carregandoSessao, setCarregandoSessao] = useState(true);
 
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const iniciouRef = useRef(false);
-
   const [clientes, setClientes] = useState<any[]>([]);
   const [instancias, setInstancias] = useState<any[]>([]);
   const [dashboard, setDashboard] = useState<any>(null);
+
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const iniciouRef = useRef(false);
 
   function limparSessaoAdmin() {
     localStorage.removeItem("adminToken");
@@ -44,11 +65,7 @@ export default function AdminPage() {
       if (!res.ok) return;
 
       const data = await res.json();
-
-      setDashboard((old: any) => {
-        if (JSON.stringify(old) === JSON.stringify(data)) return old;
-        return data;
-      });
+      setDashboard(data);
     } catch (error) {
       console.log(error);
     }
@@ -66,16 +83,7 @@ export default function AdminPage() {
       if (!res.ok) return;
 
       const data = await res.json();
-
-      setClientes((old) => {
-        const clientesNovos = data.clientes || [];
-
-        if (JSON.stringify(old) === JSON.stringify(clientesNovos)) {
-          return old;
-        }
-
-        return clientesNovos;
-      });
+      setClientes(data.clientes || []);
     } catch (error) {
       console.log(error);
     }
@@ -93,22 +101,7 @@ export default function AdminPage() {
 
       if (!Array.isArray(data)) return;
 
-      const ordenado = [...data].sort((a, b) => {
-        if (a.conectado && !b.conectado) return -1;
-        if (!a.conectado && b.conectado) return 1;
-
-        return String(a.instance || "").localeCompare(
-          String(b.instance || "")
-        );
-      });
-
-      setInstancias((old) => {
-        if (JSON.stringify(old) === JSON.stringify(ordenado)) {
-          return old;
-        }
-
-        return ordenado;
-      });
+      setInstancias(data);
     } catch (error) {
       console.log(error);
     }
@@ -155,15 +148,11 @@ export default function AdminPage() {
       }
 
       intervalRef.current = setInterval(async () => {
-        try {
-          await Promise.all([
-            carregarDashboard(token),
-            carregarClientes(token),
-            carregarInstancias(),
-          ]);
-        } catch (error) {
-          console.log(error);
-        }
+        await Promise.all([
+          carregarDashboard(token),
+          carregarClientes(token),
+          carregarInstancias(),
+        ]);
       }, 30000);
     } catch (error) {
       console.log(error);
@@ -173,7 +162,12 @@ export default function AdminPage() {
     } finally {
       setCarregandoSessao(false);
     }
-  }, [router, carregarDashboard, carregarClientes, carregarInstancias]);
+  }, [
+    router,
+    carregarDashboard,
+    carregarClientes,
+    carregarInstancias,
+  ]);
 
   useEffect(() => {
     if (iniciouRef.current) return;
@@ -193,8 +187,6 @@ export default function AdminPage() {
     instanceName: string,
     acao: "status" | "qrcode" | "reiniciar" | "desconectar"
   ) {
-    if (!instanceName) return;
-
     try {
       const res = await fetch("/api/admin/evolution", {
         method: "POST",
@@ -211,42 +203,18 @@ export default function AdminPage() {
       const data = await res.json();
 
       if (!res.ok || data.error) {
-        alert(data.error || "Erro ao controlar instância.");
+        alert(data.error || "Erro.");
         return;
       }
 
       await carregarInstancias();
-
-      if (acao === "status") {
-        alert("Status atualizado.");
-      }
-
-      if (acao === "qrcode") {
-        alert("QR Code solicitado.");
-      }
-
-      if (acao === "reiniciar") {
-        alert("Instância reiniciada.");
-      }
-
-      if (acao === "desconectar") {
-        alert("Instância desconectada.");
-      }
     } catch (error) {
       console.log(error);
-      alert("Erro ao controlar instância.");
     }
   }
 
   async function sair() {
-    try {
-      await fetch("/api/admin/logout", {
-        method: "POST",
-      });
-    } catch {}
-
     limparSessaoAdmin();
-
     router.replace("/admin/login");
   }
 
@@ -256,156 +224,326 @@ export default function AdminPage() {
 
   if (carregandoSessao) {
     return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center">
-        <p>Validando sessão...</p>
+      <main className="min-h-screen bg-black flex items-center justify-center text-white">
+        <div className="animate-pulse text-xl">
+          Carregando painel...
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-black text-white p-6">
-      <div className="flex items-center justify-between mb-8">
+    <main className="min-h-screen bg-[#050505] text-white flex">
+      {/* SIDEBAR */}
+
+      <aside className="w-[270px] bg-[#0A0A0A] border-r border-white/10 p-6 hidden lg:flex flex-col">
         <div>
-          <h1 className="text-3xl font-bold">
-            Painel Admin
+          <h1 className="text-3xl font-black text-green-400">
+            NEXORA
           </h1>
 
-          <p className="text-gray-400 mt-1">
-            {admin?.nome}
+          <p className="text-gray-500 text-sm mt-1">
+            Painel Administrativo
           </p>
+        </div>
+
+        <div className="mt-10 space-y-3">
+
+          <SidebarItem
+            icon={<LayoutDashboard size={18} />}
+            label="Dashboard"
+            active
+          />
+
+          <SidebarItem
+            icon={<Users size={18} />}
+            label="Clientes"
+          />
+
+          <SidebarItem
+            icon={<Server size={18} />}
+            label="Instâncias"
+          />
+
+          <SidebarItem
+            icon={<Bell size={18} />}
+            label="Notificações"
+          />
+
+          <SidebarItem
+            icon={<ShieldCheck size={18} />}
+            label="Saúde"
+          />
+
+          <SidebarItem
+            icon={<Activity size={18} />}
+            label="Logs"
+          />
+
         </div>
 
         <button
           onClick={sair}
-          className="bg-red-600 hover:bg-red-700 px-5 py-3 rounded-lg font-bold"
+          className="mt-auto bg-red-600 hover:bg-red-700 transition-all rounded-xl p-4 flex items-center gap-3 font-semibold"
         >
+          <LogOut size={18} />
           Sair
         </button>
-      </div>
+      </aside>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <CardResumo titulo="Clientes" valor={totalClientes} />
-        <CardResumo titulo="Instâncias" valor={instancias.length} />
-        <CardResumo
-          titulo="Receita"
-          valor={`R$ ${dashboard?.receita_total || 0}`}
-        />
-      </div>
+      {/* CONTEÚDO */}
 
-      <TabelaInstancias
-        instancias={instancias}
-        controlarInstanciaAdmin={controlarInstanciaAdmin}
-      />
+      <section className="flex-1 p-6 lg:p-10">
 
-      <div className="mt-10 space-y-10">
+        {/* TOPBAR */}
 
-        <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-5">
-          <AdminDashboardSaude adminToken={adminToken} />
-        </section>
+        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-5 mb-10">
 
-        <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-5">
-          <AdminSaudeAutomacoes adminToken={adminToken} />
-        </section>
+          <div>
+            <h2 className="text-4xl font-black">
+              Bem-vindo,
+              <span className="text-green-400">
+                {" "}
+                {admin?.nome}
+              </span>
+            </h2>
 
-        <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-5">
-          <AdminNotificacoes adminToken={adminToken} />
-        </section>
+            <p className="text-gray-500 mt-2">
+              Gerencie toda sua operação em tempo real.
+            </p>
+          </div>
 
-        <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-5">
-          <AdminLogs adminToken={adminToken} />
-        </section>
+          <div className="bg-[#101010] border border-white/10 rounded-2xl px-5 py-4">
+            <p className="text-sm text-gray-400">
+              Sistema online
+            </p>
 
-      </div>
+            <div className="flex items-center gap-2 mt-2">
+              <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse" />
+
+              <p className="font-semibold text-green-400">
+                Operacional
+              </p>
+            </div>
+          </div>
+
+        </div>
+
+        {/* CARDS */}
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-10">
+
+          <CardResumo
+            titulo="Clientes"
+            valor={totalClientes}
+          />
+
+          <CardResumo
+            titulo="Instâncias"
+            valor={instancias.length}
+          />
+
+          <CardResumo
+            titulo="Receita"
+            valor={`R$ ${dashboard?.receita_total || 0}`}
+          />
+
+        </div>
+
+        {/* INSTÂNCIAS */}
+
+        <div className="bg-[#0D0D0D] border border-white/10 rounded-3xl p-6">
+
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-2xl font-black">
+                Instâncias
+              </h2>
+
+              <p className="text-gray-500 mt-1">
+                Controle em tempo real
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {instancias.map((i: any, index: number) => (
+              <div
+                key={i.instance || index}
+                className="bg-[#131313] border border-white/5 rounded-2xl p-5"
+              >
+                <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-5">
+
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-xl font-bold">
+                        {i.instance}
+                      </h3>
+
+                      <div
+                        className={`px-3 py-1 rounded-full text-xs font-bold ${
+                          i.conectado
+                            ? "bg-green-500/20 text-green-400"
+                            : "bg-red-500/20 text-red-400"
+                        }`}
+                      >
+                        {i.conectado
+                          ? "ONLINE"
+                          : "OFFLINE"}
+                      </div>
+                    </div>
+
+                    <p className="text-gray-500 mt-2">
+                      {i.numero || "Sem número"}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3">
+
+                    <BotaoAcao
+                      cor="blue"
+                      icon={<RefreshCcw size={16} />}
+                      texto="Atualizar"
+                      onClick={() =>
+                        controlarInstanciaAdmin(
+                          i.instance,
+                          "status"
+                        )
+                      }
+                    />
+
+                    <BotaoAcao
+                      cor="yellow"
+                      icon={<QrCode size={16} />}
+                      texto="QR Code"
+                      onClick={() =>
+                        controlarInstanciaAdmin(
+                          i.instance,
+                          "qrcode"
+                        )
+                      }
+                    />
+
+                    <BotaoAcao
+                      cor="purple"
+                      icon={<RotateCw size={16} />}
+                      texto="Reiniciar"
+                      onClick={() =>
+                        controlarInstanciaAdmin(
+                          i.instance,
+                          "reiniciar"
+                        )
+                      }
+                    />
+
+                    <BotaoAcao
+                      cor="red"
+                      icon={<Power size={16} />}
+                      texto="Desconectar"
+                      onClick={() =>
+                        controlarInstanciaAdmin(
+                          i.instance,
+                          "desconectar"
+                        )
+                      }
+                    />
+
+                  </div>
+
+                </div>
+              </div>
+            ))}
+          </div>
+
+        </div>
+
+        {/* SEÇÕES */}
+
+        <div className="mt-10 space-y-10">
+
+          <section className="bg-[#0D0D0D] border border-white/10 rounded-3xl p-6">
+            <AdminDashboardSaude adminToken={adminToken} />
+          </section>
+
+          <section className="bg-[#0D0D0D] border border-white/10 rounded-3xl p-6">
+            <AdminSaudeAutomacoes adminToken={adminToken} />
+          </section>
+
+          <section className="bg-[#0D0D0D] border border-white/10 rounded-3xl p-6">
+            <AdminNotificacoes adminToken={adminToken} />
+          </section>
+
+          <section className="bg-[#0D0D0D] border border-white/10 rounded-3xl p-6">
+            <AdminLogs adminToken={adminToken} />
+          </section>
+
+        </div>
+
+      </section>
     </main>
   );
 }
 
-function CardResumo({ titulo, valor }: any) {
+function SidebarItem({
+  icon,
+  label,
+  active,
+}: any) {
   return (
-    <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5">
-      <p className="text-gray-400 text-sm">
+    <button
+      className={`w-full flex items-center gap-3 px-4 py-4 rounded-2xl transition-all ${
+        active
+          ? "bg-green-500/10 text-green-400 border border-green-500/20"
+          : "hover:bg-white/5 text-gray-300"
+      }`}
+    >
+      {icon}
+      <span className="font-semibold">
+        {label}
+      </span>
+    </button>
+  );
+}
+
+function CardResumo({
+  titulo,
+  valor,
+}: any) {
+  return (
+    <div className="bg-[#0D0D0D] border border-white/10 rounded-3xl p-6">
+      <p className="text-gray-500 text-sm">
         {titulo}
       </p>
 
-      <p className="text-2xl font-bold mt-2">
+      <h2 className="text-4xl font-black mt-4">
         {valor}
-      </p>
+      </h2>
     </div>
   );
 }
 
-function TabelaInstancias({
-  instancias,
-  controlarInstanciaAdmin,
+function BotaoAcao({
+  icon,
+  texto,
+  onClick,
+  cor,
 }: any) {
+  const cores: any = {
+    blue: "bg-blue-500/20 text-blue-400 hover:bg-blue-500/30",
+    yellow:
+      "bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30",
+    purple:
+      "bg-purple-500/20 text-purple-400 hover:bg-purple-500/30",
+    red: "bg-red-500/20 text-red-400 hover:bg-red-500/30",
+  };
+
   return (
-    <div className="grid gap-4">
-      {instancias.map((i: any, index: number) => (
-        <div
-          key={i.instance || index}
-          className="bg-zinc-900 border border-zinc-700 rounded-2xl p-4"
-        >
-          <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
-            <div>
-              <h3 className="font-bold text-lg">
-                {i.instance}
-              </h3>
-
-              <p className="text-gray-400 text-sm">
-                {i.numero || "-"}
-              </p>
-
-              <p
-                className={
-                  i.conectado
-                    ? "text-green-400 text-sm mt-1"
-                    : "text-red-400 text-sm mt-1"
-                }
-              >
-                {i.conectado ? "Conectado" : "Desconectado"}
-              </p>
-            </div>
-
-            <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={() =>
-                  controlarInstanciaAdmin(i.instance, "status")
-                }
-                className="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded"
-              >
-                Atualizar
-              </button>
-
-              <button
-                onClick={() =>
-                  controlarInstanciaAdmin(i.instance, "qrcode")
-                }
-                className="bg-yellow-600 hover:bg-yellow-700 px-3 py-2 rounded"
-              >
-                QR Code
-              </button>
-
-              <button
-                onClick={() =>
-                  controlarInstanciaAdmin(i.instance, "reiniciar")
-                }
-                className="bg-purple-600 hover:bg-purple-700 px-3 py-2 rounded"
-              >
-                Reiniciar
-              </button>
-
-              <button
-                onClick={() =>
-                  controlarInstanciaAdmin(i.instance, "desconectar")
-                }
-                className="bg-red-600 hover:bg-red-700 px-3 py-2 rounded"
-              >
-                Desconectar
-              </button>
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-2 px-4 py-3 rounded-xl font-semibold transition-all ${cores[cor]}`}
+    >
+      {icon}
+      {texto}
+    </button>
   );
 }
