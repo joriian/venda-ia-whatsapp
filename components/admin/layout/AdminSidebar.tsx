@@ -9,12 +9,14 @@ import {
   Activity,
   LogOut,
   Wallet,
+  UserCog,
 } from "lucide-react";
 
 type Aba =
   | "dashboard"
   | "clientes"
   | "financeiro"
+  | "usuarios"
   | "instancias"
   | "notificacoes"
   | "saude"
@@ -64,6 +66,13 @@ export default function AdminSidebar({
         />
 
         <SidebarItem
+          icon={<UserCog size={18} />}
+          label="Usuários"
+          active={abaAtiva === "usuarios"}
+          onClick={() => setAbaAtiva("usuarios")}
+        />
+
+        <SidebarItem
           icon={<Server size={18} />}
           label="Instâncias"
           active={abaAtiva === "instancias"}
@@ -108,12 +117,7 @@ function SidebarItem({
   label,
   active,
   onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
+}: any) {
   return (
     <button
       onClick={onClick}
