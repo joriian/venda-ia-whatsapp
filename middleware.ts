@@ -51,6 +51,10 @@ export function middleware(
       pathname.startsWith(r)
     );
 
+  // =========================
+  // CLIENTE
+  // =========================
+
   if (rotaCliente) {
     if (!clienteToken) {
       return NextResponse.redirect(
@@ -77,9 +81,17 @@ export function middleware(
         "clienteToken"
       );
 
+      response.cookies.delete(
+        "clienteRefreshToken"
+      );
+
       return response;
     }
   }
+
+  // =========================
+  // LOGIN CLIENTE
+  // =========================
 
   if (
     pathname === "/login" &&
@@ -98,6 +110,10 @@ export function middleware(
     }
   }
 
+  // =========================
+  // HOME
+  // =========================
+
   if (
     pathname === "/" &&
     clienteToken
@@ -115,15 +131,58 @@ export function middleware(
     }
   }
 
+  // =========================
+  // ADMIN
+  // =========================
+
   if (
     rotaAdmin &&
-    pathname !==
-      "/admin/login"
+    pathname !== "/admin/login"
   ) {
     if (!adminToken) {
       return NextResponse.redirect(
         new URL(
           "/admin/login",
+          req.url
+        )
+      );
+    }
+
+    const jwtValido =
+      validarJWT(adminToken);
+
+    if (!jwtValido) {
+      const response =
+        NextResponse.redirect(
+          new URL(
+            "/admin/login",
+            req.url
+          )
+        );
+
+      response.cookies.delete(
+        "adminToken"
+      );
+
+      return response;
+    }
+  }
+
+  // =========================
+  // LOGIN ADMIN
+  // =========================
+
+  if (
+    pathname === "/admin/login" &&
+    adminToken
+  ) {
+    const jwtValido =
+      validarJWT(adminToken);
+
+    if (jwtValido) {
+      return NextResponse.redirect(
+        new URL(
+          "/admin",
           req.url
         )
       );
