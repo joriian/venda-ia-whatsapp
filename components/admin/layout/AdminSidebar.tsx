@@ -8,11 +8,13 @@ import {
   ShieldCheck,
   Activity,
   LogOut,
+  Wallet,
 } from "lucide-react";
 
 type Aba =
   | "dashboard"
   | "clientes"
+  | "financeiro"
   | "instancias"
   | "notificacoes"
   | "saude"
@@ -52,6 +54,13 @@ export default function AdminSidebar({
           label="Clientes"
           active={abaAtiva === "clientes"}
           onClick={() => setAbaAtiva("clientes")}
+        />
+
+        <SidebarItem
+          icon={<Wallet size={18} />}
+          label="Financeiro"
+          active={abaAtiva === "financeiro"}
+          onClick={() => setAbaAtiva("financeiro")}
         />
 
         <SidebarItem
