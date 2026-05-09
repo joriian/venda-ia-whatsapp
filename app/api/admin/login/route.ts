@@ -44,14 +44,14 @@ export async function POST(req: Request) {
       );
     }
 
-    const { data: admin, error } = await supabase
+    const { data: admin } = await supabase
       .from("admin_users")
       .select("*")
       .ilike("email", emailTratado)
       .eq("ativo", true)
       .maybeSingle();
 
-    if (error || !admin) {
+    if (!admin) {
       return NextResponse.json(
         { error: "Email ou senha incorretos" },
         { status: 401 }
@@ -69,7 +69,6 @@ export async function POST(req: Request) {
     }
 
     const token = gerarAdminToken(admin);
-
     const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 12).toISOString();
 
     await supabase

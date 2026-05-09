@@ -6,6 +6,12 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+function pegarCookie(req: Request, nome: string) {
+  const cookie = req.headers.get("cookie") || "";
+  const match = cookie.match(new RegExp(`${nome}=([^;]+)`));
+  return match?.[1] || "";
+}
+
 export async function POST(req: Request) {
   try {
     let token = "";
@@ -18,9 +24,7 @@ export async function POST(req: Request) {
     }
 
     if (!token) {
-      const cookieHeader = req.headers.get("cookie") || "";
-      const match = cookieHeader.match(/adminToken=([^;]+)/);
-      token = match?.[1] || "";
+      token = pegarCookie(req, "adminToken");
     }
 
     if (token) {
