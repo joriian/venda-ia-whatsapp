@@ -26,14 +26,35 @@ export default function AdminSidebar({
   abaAtiva,
   setAbaAtiva,
   sair,
+  permissoes,
 }: {
   abaAtiva: Aba;
   setAbaAtiva: (aba: Aba) => void;
   sair: () => void;
+  permissoes: any;
 }) {
+  const podeVerResumo =
+    Boolean(permissoes?.pode_ver_resumo);
+
+  const podeVerClientes =
+    Boolean(permissoes?.pode_ver_clientes);
+
+  const podeFinanceiro =
+    Boolean(permissoes?.pode_cobrar_clientes);
+
+  const podeVerInstancias =
+    Boolean(permissoes?.pode_ver_instancias);
+
+  const podeGerenciarAdmins =
+    Boolean(
+      permissoes?.pode_gerenciar_admins
+    );
+
   return (
     <aside className="w-[270px] bg-[#0A0A0A] border-r border-white/10 p-6 hidden lg:flex flex-col">
+
       <div>
+
         <h1 className="text-3xl font-black text-green-400">
           NEXORA
         </h1>
@@ -41,73 +62,159 @@ export default function AdminSidebar({
         <p className="text-gray-500 text-sm mt-1">
           Painel Administrativo
         </p>
+
       </div>
 
       <div className="mt-10 space-y-3">
-        <SidebarItem
-          icon={<LayoutDashboard size={18} />}
-          label="Dashboard"
-          active={abaAtiva === "dashboard"}
-          onClick={() => setAbaAtiva("dashboard")}
-        />
 
-        <SidebarItem
-          icon={<Users size={18} />}
-          label="Clientes"
-          active={abaAtiva === "clientes"}
-          onClick={() => setAbaAtiva("clientes")}
-        />
+        {podeVerResumo && (
+          <SidebarItem
+            icon={
+              <LayoutDashboard
+                size={18}
+              />
+            }
+            label="Dashboard"
+            active={
+              abaAtiva ===
+              "dashboard"
+            }
+            onClick={() =>
+              setAbaAtiva(
+                "dashboard"
+              )
+            }
+          />
+        )}
 
-        <SidebarItem
-          icon={<Wallet size={18} />}
-          label="Financeiro"
-          active={abaAtiva === "financeiro"}
-          onClick={() => setAbaAtiva("financeiro")}
-        />
+        {podeVerClientes && (
+          <SidebarItem
+            icon={
+              <Users size={18} />
+            }
+            label="Clientes"
+            active={
+              abaAtiva ===
+              "clientes"
+            }
+            onClick={() =>
+              setAbaAtiva(
+                "clientes"
+              )
+            }
+          />
+        )}
 
-        <SidebarItem
-          icon={<UserCog size={18} />}
-          label="Usuários"
-          active={abaAtiva === "usuarios"}
-          onClick={() => setAbaAtiva("usuarios")}
-        />
+        {podeFinanceiro && (
+          <SidebarItem
+            icon={
+              <Wallet size={18} />
+            }
+            label="Financeiro"
+            active={
+              abaAtiva ===
+              "financeiro"
+            }
+            onClick={() =>
+              setAbaAtiva(
+                "financeiro"
+              )
+            }
+          />
+        )}
 
-        <SidebarItem
-          icon={<Server size={18} />}
-          label="Instâncias"
-          active={abaAtiva === "instancias"}
-          onClick={() => setAbaAtiva("instancias")}
-        />
+        {podeGerenciarAdmins && (
+          <SidebarItem
+            icon={
+              <UserCog size={18} />
+            }
+            label="Usuários"
+            active={
+              abaAtiva ===
+              "usuarios"
+            }
+            onClick={() =>
+              setAbaAtiva(
+                "usuarios"
+              )
+            }
+          />
+        )}
+
+        {podeVerInstancias && (
+          <SidebarItem
+            icon={
+              <Server size={18} />
+            }
+            label="Instâncias"
+            active={
+              abaAtiva ===
+              "instancias"
+            }
+            onClick={() =>
+              setAbaAtiva(
+                "instancias"
+              )
+            }
+          />
+        )}
 
         <SidebarItem
           icon={<Bell size={18} />}
           label="Notificações"
-          active={abaAtiva === "notificacoes"}
-          onClick={() => setAbaAtiva("notificacoes")}
+          active={
+            abaAtiva ===
+            "notificacoes"
+          }
+          onClick={() =>
+            setAbaAtiva(
+              "notificacoes"
+            )
+          }
         />
 
         <SidebarItem
-          icon={<ShieldCheck size={18} />}
+          icon={
+            <ShieldCheck
+              size={18}
+            />
+          }
           label="Saúde"
-          active={abaAtiva === "saude"}
-          onClick={() => setAbaAtiva("saude")}
+          active={
+            abaAtiva ===
+            "saude"
+          }
+          onClick={() =>
+            setAbaAtiva("saude")
+          }
         />
 
         <SidebarItem
-          icon={<Activity size={18} />}
+          icon={
+            <Activity size={18} />
+          }
           label="Logs"
-          active={abaAtiva === "logs"}
-          onClick={() => setAbaAtiva("logs")}
+          active={
+            abaAtiva === "logs"
+          }
+          onClick={() =>
+            setAbaAtiva("logs")
+          }
         />
+
       </div>
 
       <button
         onClick={sair}
         className="mt-auto bg-red-600 hover:bg-red-700 transition-all rounded-xl p-4 flex items-center gap-3 font-semibold"
       >
+
         <LogOut size={18} />
+
         Sair
+
       </button>
+
     </aside>
   );
 }
@@ -127,11 +234,13 @@ function SidebarItem({
           : "hover:bg-white/5 text-gray-300"
       }`}
     >
+
       {icon}
 
       <span className="font-semibold">
         {label}
       </span>
+
     </button>
   );
 }

@@ -43,6 +43,8 @@ export default function AdminPage() {
   const [abaAtiva, setAbaAtiva] = useState<Aba>("dashboard");
   const [admin, setAdmin] = useState<AnyObj>(null);
   const [adminToken, setAdminToken] = useState("");
+  const [permissoes, setPermissoes] = useState<any>(null);
+
   const [carregandoSessao, setCarregandoSessao] = useState(true);
 
   const [clientes, setClientes] = useState<any[]>([]);
@@ -60,6 +62,28 @@ export default function AdminPage() {
     localStorage.removeItem("adminSessaoExpira");
   }
 
+  function podeAcessarAba(aba: Aba, p = permissoes) {
+    if (!p) return false;
+
+    if (aba === "dashboard") return Boolean(p.pode_ver_resumo);
+    if (aba === "clientes") return Boolean(p.pode_ver_clientes);
+    if (aba === "financeiro") return Boolean(p.pode_cobrar_clientes);
+    if (aba === "usuarios") return Boolean(p.pode_gerenciar_admins);
+    if (aba === "instancias") return Boolean(p.pode_ver_instancias);
+
+    return true;
+  }
+
+  function primeiraAbaPermitida(p: any): Aba {
+    if (p?.pode_ver_resumo) return "dashboard";
+    if (p?.pode_ver_clientes) return "clientes";
+    if (p?.pode_cobrar_clientes) return "financeiro";
+    if (p?.pode_gerenciar_admins) return "usuarios";
+    if (p?.pode_ver_instancias) return "instancias";
+
+    return "notificacoes";
+  }
+
   const carregarDashboard = useCallback(async (token: string) => {
     try {
       const res = await fetch("/api/admin/dashboard", {
@@ -72,7 +96,6 @@ export default function AdminPage() {
       if (!res.ok) return;
 
       const data = await res.json();
-
       setDashboard(data);
     } catch (error) {
       console.log(error);
@@ -91,7 +114,6 @@ export default function AdminPage() {
       if (!res.ok) return;
 
       const data = await res.json();
-
       setClientes(data.clientes || []);
     } catch (error) {
       console.log(error);
@@ -113,6 +135,28 @@ export default function AdminPage() {
       setInstancias(data);
     } catch (error) {
       console.log(error);
+    }
+  }, []);
+
+  const carregarPermissoes = useCallback(async (token: string) => {
+    try {
+      const res = await fetch("/api/admin/minhas-permissoes", {
+        headers: {
+          "x-admin-token": token,
+        },
+        cache: "no-store",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        return null;
+      }
+
+      return data.permissoes || null;
+    } catch (error) {
+      console.log(error);
+      return null;
     }
   }, []);
 
@@ -146,6 +190,17 @@ export default function AdminPage() {
       setAdmin(data.admin);
       setAdminToken(token);
 
+      const permissoesAdmin = await carregarPermissoes(token);
+
+      if (!permissoesAdmin) {
+        limparSessaoAdmin();
+        router.replace("/admin/login");
+        return;
+      }
+
+      setPermissoes(permissoesAdmin);
+      setAbaAtiva(primeiraAbaPermitida(permissoesAdmin));
+
       await Promise.all([
         carregarDashboard(token),
         carregarClientes(token),
@@ -165,13 +220,18 @@ export default function AdminPage() {
       }, 30000);
     } catch (error) {
       console.log(error);
-
       limparSessaoAdmin();
       router.replace("/admin/login");
     } finally {
       setCarregandoSessao(false);
     }
-  }, [router, carregarDashboard, carregarClientes, carregarInstancias]);
+  }, [
+    router,
+    carregarDashboard,
+    carregarClientes,
+    carregarInstancias,
+    carregarPermissoes,
+  ]);
 
   useEffect(() => {
     if (iniciouRef.current) return;
@@ -191,6 +251,11 @@ export default function AdminPage() {
     instanceName: string,
     acao: "status" | "qrcode" | "reiniciar" | "desconectar"
   ) {
+    if (!permissoes?.pode_ver_instancias) {
+      alert("Sem permissão para gerenciar instâncias.");
+      return;
+    }
+
     try {
       const res = await fetch("/api/admin/evolution", {
         method: "POST",
@@ -217,6 +282,15 @@ export default function AdminPage() {
     }
   }
 
+  function mudarAba(aba: Aba) {
+    if (!podeAcessarAba(aba)) {
+      alert("Você não tem permissão para acessar esta área.");
+      return;
+    }
+
+    setAbaAtiva(aba);
+  }
+
   async function sair() {
     limparSessaoAdmin();
     router.replace("/admin/login");
@@ -240,14 +314,15 @@ export default function AdminPage() {
     <main className="min-h-screen bg-[#050505] text-white flex">
       <AdminSidebar
         abaAtiva={abaAtiva}
-        setAbaAtiva={setAbaAtiva}
+        setAbaAtiva={mudarAba}
         sair={sair}
+        permissoes={permissoes}
       />
 
       <section className="flex-1 p-6 lg:p-10">
         <AdminTopbar admin={admin} />
 
-        {abaAtiva === "dashboard" && (
+        {abaAtiva === "dashboard" && podeAcessarAba("dashboard") && (
           <div>
             <AdminResumoCards
               totalClientes={totalClientes}
@@ -255,14 +330,16 @@ export default function AdminPage() {
               receita={dashboard?.receita_total || 0}
             />
 
-            <AdminInstanciasTable
-              instancias={instancias}
-              controlarInstanciaAdmin={controlarInstanciaAdmin}
-            />
+            {permissoes?.pode_ver_instancias && (
+              <AdminInstanciasTable
+                instancias={instancias}
+                controlarInstanciaAdmin={controlarInstanciaAdmin}
+              />
+            )}
           </div>
         )}
 
-        {abaAtiva === "clientes" && (
+        {abaAtiva === "clientes" && podeAcessarAba("clientes") && (
           <AdminClientes
             clientes={clientes}
             adminToken={adminToken}
@@ -270,18 +347,15 @@ export default function AdminPage() {
           />
         )}
 
-        {abaAtiva === "financeiro" && (
-          <AdminFinanceiro
-            clientes={clientes}
-            dashboard={dashboard}
-          />
+        {abaAtiva === "financeiro" && podeAcessarAba("financeiro") && (
+          <AdminFinanceiro clientes={clientes} dashboard={dashboard} />
         )}
 
-        {abaAtiva === "usuarios" && (
+        {abaAtiva === "usuarios" && podeAcessarAba("usuarios") && (
           <AdminUsuarios adminToken={adminToken} />
         )}
 
-        {abaAtiva === "instancias" && (
+        {abaAtiva === "instancias" && podeAcessarAba("instancias") && (
           <AdminInstanciasTable
             instancias={instancias}
             controlarInstanciaAdmin={controlarInstanciaAdmin}
