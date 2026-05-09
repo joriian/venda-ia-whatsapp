@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
-import AdminCatalogo from "@/components/admin/AdminCatalogo";
 import AdminLogs from "@/components/admin/AdminLogs";
 import AdminSaudeAutomacoes from "@/components/admin/AdminSaudeAutomacoes";
 import AdminNotificacoes from "@/components/admin/AdminNotificacoes";
@@ -218,10 +217,21 @@ export default function AdminPage() {
 
       await carregarInstancias();
 
-      if (acao === "status") alert("Status atualizado.");
-      if (acao === "qrcode") alert("QR Code solicitado.");
-      if (acao === "reiniciar") alert("Instância reiniciada.");
-      if (acao === "desconectar") alert("Instância desconectada.");
+      if (acao === "status") {
+        alert("Status atualizado.");
+      }
+
+      if (acao === "qrcode") {
+        alert("QR Code solicitado.");
+      }
+
+      if (acao === "reiniciar") {
+        alert("Instância reiniciada.");
+      }
+
+      if (acao === "desconectar") {
+        alert("Instância desconectada.");
+      }
     } catch (error) {
       console.log(error);
       alert("Erro ao controlar instância.");
@@ -236,6 +246,7 @@ export default function AdminPage() {
     } catch {}
 
     limparSessaoAdmin();
+
     router.replace("/admin/login");
   }
 
@@ -255,9 +266,13 @@ export default function AdminPage() {
     <main className="min-h-screen bg-black text-white p-6">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold">Painel Admin</h1>
+          <h1 className="text-3xl font-bold">
+            Painel Admin
+          </h1>
 
-          <p className="text-gray-400 mt-1">{admin?.nome}</p>
+          <p className="text-gray-400 mt-1">
+            {admin?.nome}
+          </p>
         </div>
 
         <button
@@ -271,38 +286,35 @@ export default function AdminPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <CardResumo titulo="Clientes" valor={totalClientes} />
         <CardResumo titulo="Instâncias" valor={instancias.length} />
-        <CardResumo titulo="Receita" valor={`R$ ${dashboard?.receita_total || 0}`} />
+        <CardResumo
+          titulo="Receita"
+          valor={`R$ ${dashboard?.receita_total || 0}`}
+        />
       </div>
 
-      <section className="mb-10">
-        <h2 className="text-2xl font-bold mb-4">Instâncias</h2>
+      <TabelaInstancias
+        instancias={instancias}
+        controlarInstanciaAdmin={controlarInstanciaAdmin}
+      />
 
-        <TabelaInstancias
-          instancias={instancias}
-          controlarInstanciaAdmin={controlarInstanciaAdmin}
-        />
-      </section>
+      <div className="mt-10 space-y-10">
 
-      <div className="space-y-10">
         <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-5">
-          <AdminDashboardSaude token={adminToken} />
+          <AdminDashboardSaude adminToken={adminToken} />
         </section>
 
         <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-5">
-          <AdminSaudeAutomacoes token={adminToken} />
+          <AdminSaudeAutomacoes adminToken={adminToken} />
         </section>
 
         <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-5">
-          <AdminNotificacoes token={adminToken} />
+          <AdminNotificacoes adminToken={adminToken} />
         </section>
 
         <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-5">
-          <AdminCatalogo token={adminToken} />
+          <AdminLogs adminToken={adminToken} />
         </section>
 
-        <section className="bg-zinc-900 border border-zinc-700 rounded-2xl p-5">
-          <AdminLogs token={adminToken} />
-        </section>
       </div>
     </main>
   );
@@ -311,22 +323,23 @@ export default function AdminPage() {
 function CardResumo({ titulo, valor }: any) {
   return (
     <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5">
-      <p className="text-gray-400 text-sm">{titulo}</p>
+      <p className="text-gray-400 text-sm">
+        {titulo}
+      </p>
 
-      <p className="text-2xl font-bold mt-2">{valor}</p>
+      <p className="text-2xl font-bold mt-2">
+        {valor}
+      </p>
     </div>
   );
 }
 
-function TabelaInstancias({ instancias, controlarInstanciaAdmin }: any) {
+function TabelaInstancias({
+  instancias,
+  controlarInstanciaAdmin,
+}: any) {
   return (
     <div className="grid gap-4">
-      {instancias.length === 0 && (
-        <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-5 text-gray-400">
-          Nenhuma instância encontrada.
-        </div>
-      )}
-
       {instancias.map((i: any, index: number) => (
         <div
           key={i.instance || index}
@@ -334,9 +347,13 @@ function TabelaInstancias({ instancias, controlarInstanciaAdmin }: any) {
         >
           <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
             <div>
-              <h3 className="font-bold text-lg">{i.instance}</h3>
+              <h3 className="font-bold text-lg">
+                {i.instance}
+              </h3>
 
-              <p className="text-gray-400 text-sm">{i.numero || "-"}</p>
+              <p className="text-gray-400 text-sm">
+                {i.numero || "-"}
+              </p>
 
               <p
                 className={
@@ -351,21 +368,27 @@ function TabelaInstancias({ instancias, controlarInstanciaAdmin }: any) {
 
             <div className="flex gap-2 flex-wrap">
               <button
-                onClick={() => controlarInstanciaAdmin(i.instance, "status")}
+                onClick={() =>
+                  controlarInstanciaAdmin(i.instance, "status")
+                }
                 className="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded"
               >
                 Atualizar
               </button>
 
               <button
-                onClick={() => controlarInstanciaAdmin(i.instance, "qrcode")}
+                onClick={() =>
+                  controlarInstanciaAdmin(i.instance, "qrcode")
+                }
                 className="bg-yellow-600 hover:bg-yellow-700 px-3 py-2 rounded"
               >
                 QR Code
               </button>
 
               <button
-                onClick={() => controlarInstanciaAdmin(i.instance, "reiniciar")}
+                onClick={() =>
+                  controlarInstanciaAdmin(i.instance, "reiniciar")
+                }
                 className="bg-purple-600 hover:bg-purple-700 px-3 py-2 rounded"
               >
                 Reiniciar
