@@ -34,7 +34,10 @@ export async function GET(req: Request) {
     const admin = await validarAdmin(req);
 
     if (!admin) {
-      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Não autorizado" },
+        { status: 401 }
+      );
     }
 
     const { searchParams } = new URL(req.url);
@@ -44,11 +47,7 @@ export async function GET(req: Request) {
 
     let query = supabase
       .from("logs_mensagens")
-      .select(`
-        *,
-        clientes_ia_whatsapp(nome, email, telefone),
-        servicos_ia(nome, slug)
-      `)
+      .select("*")
       .order("criado_em", { ascending: false })
       .limit(100);
 
@@ -66,7 +65,7 @@ export async function GET(req: Request) {
       );
     }
 
-    const { data, error } = await query;
+    const { data: logs, error } = await query;
 
     if (error) {
       return NextResponse.json(
@@ -80,7 +79,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      logs: data || [],
+      logs: logs || [],
     });
   } catch (error: any) {
     return NextResponse.json(
