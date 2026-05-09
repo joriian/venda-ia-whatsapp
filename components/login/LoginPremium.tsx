@@ -24,8 +24,8 @@ export default function LoginPremium() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/login", {
-        method: "POST",
+const res = await fetch("/api/cliente/login", {
+  credentials: "include",
         headers: {
           "Content-Type":
             "application/json",
