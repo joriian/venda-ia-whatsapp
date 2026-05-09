@@ -48,6 +48,55 @@ function gerarTokenCliente(cliente: any) {
   );
 }
 
+async function garantirServicoCliente(cliente: any) {
+  const { data: vinculos } = await supabase
+    .from("cliente_servicos")
+    .select("*")
+    .eq("cliente_id", cliente.id);
+
+  if (vinculos && vinculos.length > 0) {
+    return true;
+  }
+
+  if (!cliente.servico_id || !cliente.plano_id) {
+    return true;
+  }
+
+  const { data: servico } = await supabase
+    .from("servicos_ia")
+    .select("*")
+    .eq("id", cliente.servico_id)
+    .maybeSingle();
+
+  const { data: plano } = await supabase
+    .from("planos")
+    .select("*")
+    .eq("id", cliente.plano_id)
+    .maybeSingle();
+
+  if (!servico || !plano) {
+    return true;
+  }
+
+  await supabase.from("cliente_servicos").upsert(
+    {
+      cliente_id: cliente.id,
+      servico_id: servico.id,
+      plano_id: plano.id,
+      status: cliente.status || "ativo",
+      data_inicio: cliente.data_inicio || null,
+      data_expiracao: cliente.data_expiracao || null,
+      evolution_status: "desconectado",
+      updated_at: new Date().toISOString(),
+    },
+    {
+      onConflict: "cliente_id,servico_id",
+    }
+  );
+
+  return true;
+}
+
 export async function POST(req: Request) {
   try {
     const admin = await validarAdmin(req);
@@ -88,19 +137,25 @@ export async function POST(req: Request) {
       );
     }
 
+    await garantirServicoCliente(cliente);
+
     const tokenCliente = gerarTokenCliente(cliente);
+    const tokenSeguro = encodeURIComponent(tokenCliente);
 
     return NextResponse.json({
       ok: true,
       token: tokenCliente,
       clienteId,
-      url: `/cliente?cliente=${clienteId}&token=${tokenCliente}&admin=1`,
+      url: `/cliente?cliente=${clienteId}&token=${tokenSeguro}&admin=1`,
     });
   } catch (error: any) {
     console.log("ERRO ACESSAR CLIENTE:", error.message);
 
     return NextResponse.json(
-      { error: "Erro ao acessar cliente" },
+      {
+        error: "Erro ao acessar cliente",
+        detalhe: error.message,
+      },
       { status: 500 }
     );
   }
