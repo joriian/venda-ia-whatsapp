@@ -25,7 +25,7 @@ function validarJWT(token: string) {
   }
 }
 
-export function middleware(
+export function proxy(
   req: NextRequest
 ) {
   const { pathname } =
