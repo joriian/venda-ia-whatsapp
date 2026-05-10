@@ -26,6 +26,8 @@ import AdminSaudeAutomacoes from "@/components/admin/AdminSaudeAutomacoes";
 import AdminNotificacoes from "@/components/admin/AdminNotificacoes";
 import AdminDashboardSaude from "@/components/admin/AdminDashboardSaude";
 
+import AdminSuportePage from "./suporte/page";
+
 type AnyObj = any;
 
 type Aba =
@@ -37,7 +39,8 @@ type Aba =
   | "instancias"
   | "notificacoes"
   | "saude"
-  | "logs";
+  | "logs"
+  | "suporte";
 
 const PERMISSOES_TOTAIS = {
   pode_ver_resumo: true,
@@ -115,7 +118,6 @@ export default function AdminPage() {
       if (!res.ok) return;
 
       const data = await res.json();
-
       setDashboard(data);
     } catch (error) {
       console.log(error);
@@ -134,7 +136,6 @@ export default function AdminPage() {
       if (!res.ok) return;
 
       const data = await res.json();
-
       setClientes(data.clientes || []);
     } catch (error) {
       console.log(error);
@@ -304,11 +305,6 @@ export default function AdminPage() {
     instanceName: string,
     acao: "status" | "qrcode" | "reiniciar" | "desconectar"
   ) {
-    if (!permissoes?.pode_ver_instancias) {
-      alert("Sem permissão para gerenciar instâncias.");
-      return;
-    }
-
     try {
       const res = await fetch("/api/admin/evolution", {
         method: "POST",
@@ -325,13 +321,14 @@ export default function AdminPage() {
       const data = await res.json();
 
       if (!res.ok || data.error) {
-        alert(data.error || "Erro.");
+        alert(data.error || "Erro ao controlar instância.");
         return;
       }
 
       await carregarInstancias();
     } catch (error) {
       console.log(error);
+      alert("Erro ao controlar instância.");
     }
   }
 
@@ -423,9 +420,7 @@ export default function AdminPage() {
   }
 
   async function excluirPlano(id: string) {
-    const confirmar = confirm(
-      "Deseja realmente excluir este plano?"
-    );
+    const confirmar = confirm("Deseja realmente excluir este plano?");
 
     if (!confirmar) return;
 
@@ -523,10 +518,7 @@ export default function AdminPage() {
         )}
 
         {abaAtiva === "financeiro" && podeAcessarAba("financeiro") && (
-          <AdminFinanceiro
-            clientes={clientes}
-            dashboard={dashboard}
-          />
+          <AdminFinanceiro clientes={clientes} dashboard={dashboard} />
         )}
 
         {abaAtiva === "catalogo" && podeAcessarAba("catalogo") && (
@@ -553,6 +545,18 @@ export default function AdminPage() {
           />
         )}
 
+        {abaAtiva === "notificacoes" && (
+          <section className="bg-[#0D0D0D] border border-white/10 rounded-3xl p-6">
+            <AdminNotificacoes adminToken={adminToken} />
+          </section>
+        )}
+
+        {abaAtiva === "logs" && (
+          <section className="bg-[#0D0D0D] border border-white/10 rounded-3xl p-6">
+            <AdminLogs adminToken={adminToken} />
+          </section>
+        )}
+
         {abaAtiva === "saude" && (
           <div className="space-y-10">
             <section className="bg-[#0D0D0D] border border-white/10 rounded-3xl p-6">
@@ -565,15 +569,9 @@ export default function AdminPage() {
           </div>
         )}
 
-        {abaAtiva === "notificacoes" && (
+        {abaAtiva === "suporte" && (
           <section className="bg-[#0D0D0D] border border-white/10 rounded-3xl p-6">
-            <AdminNotificacoes adminToken={adminToken} />
-          </section>
-        )}
-
-        {abaAtiva === "logs" && (
-          <section className="bg-[#0D0D0D] border border-white/10 rounded-3xl p-6">
-            <AdminLogs adminToken={adminToken} />
+            <AdminSuportePage />
           </section>
         )}
       </section>

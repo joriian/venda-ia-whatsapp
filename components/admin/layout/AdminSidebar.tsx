@@ -11,6 +11,7 @@ import {
   Wallet,
   UserCog,
   Package,
+  LifeBuoy,
 } from "lucide-react";
 
 type Aba =
@@ -22,7 +23,8 @@ type Aba =
   | "instancias"
   | "notificacoes"
   | "saude"
-  | "logs";
+  | "logs"
+  | "suporte";
 
 export default function AdminSidebar({
   abaAtiva,
@@ -128,6 +130,13 @@ export default function AdminSidebar({
           label="Logs"
           active={abaAtiva === "logs"}
           onClick={() => setAbaAtiva("logs")}
+        />
+
+        <SidebarItem
+          icon={<LifeBuoy size={18} />}
+          label="Suporte"
+          active={abaAtiva === "suporte"}
+          onClick={() => setAbaAtiva("suporte")}
         />
       </div>
 
