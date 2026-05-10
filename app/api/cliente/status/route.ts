@@ -7,22 +7,65 @@ const supabase = createClient(
 );
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const clienteId = searchParams.get("cliente");
+  try {
+    const { searchParams } = new URL(req.url);
 
-  if (!clienteId) {
-    return NextResponse.json({ error: "Cliente obrigatório" }, { status: 400 });
+    const clienteId = searchParams.get("cliente");
+
+    if (!clienteId) {
+      return NextResponse.json(
+        { error: "Cliente obrigatório" },
+        { status: 400 }
+      );
+    }
+
+    const { data: cliente, error: clienteError } = await supabase
+      .from("clientes_ia_whatsapp")
+      .select("*")
+      .eq("id", clienteId)
+      .maybeSingle();
+
+    if (clienteError || !cliente) {
+      return NextResponse.json(
+        { error: "Cliente não encontrado" },
+        { status: 404 }
+      );
+    }
+
+    const { data: servicos, error: servicosError } = await supabase
+      .from("cliente_servicos")
+      .select("*")
+      .eq("cliente_id", clienteId)
+      .order("created_at", { ascending: false });
+
+    if (servicosError) {
+      return NextResponse.json(
+        { error: servicosError.message },
+        { status: 500 }
+      );
+    }
+
+    const temServicoAtivo = (servicos || []).some(
+      (s: any) => String(s.status || "").toLowerCase() === "ativo"
+    );
+
+    const statusFinal =
+      String(cliente.status || "").toLowerCase() === "ativo" || temServicoAtivo
+        ? "ativo"
+        : cliente.status || "aguardando_pagamento";
+
+    return NextResponse.json({
+      ...cliente,
+      status: statusFinal,
+      cliente_servicos: servicos || [],
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      {
+        error: "Erro ao consultar status do cliente",
+        detalhe: error.message,
+      },
+      { status: 500 }
+    );
   }
-
-  const { data: cliente, error } = await supabase
-    .from("clientes_ia_whatsapp")
-    .select("id,status,data_expiracao")
-    .eq("id", clienteId)
-    .single();
-
-  if (error || !cliente) {
-    return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 });
-  }
-
-  return NextResponse.json(cliente);
 }
