@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ClienteLayoutPremium from "@/components/cliente/ClienteLayoutPremium";
 import ClienteMetricasPremium from "@/components/cliente/ClienteMetricasPremium";
+import WhatsAppServicoCard from "@/components/cliente/WhatsAppServicoCard";
 
 type AnyObj = any;
 
@@ -1395,120 +1396,6 @@ function ServicoDetalheCard({ item, statusPt, dataPt }: any) {
         <Info label="Instância" value={item.evolution?.instance_name || item.instance_name || "-"} />
         <Info label="WhatsApp" value={statusPt(item.evolution?.status || item.evolution_status || "desconectado")} />
         <Info label="Número" value={item.evolution?.numero || item.evolution_numero || "-"} />
-      </div>
-    </div>
-  );
-}
-
-function WhatsAppServicoCard({ item, qrcodeSrc, statusPt, dataPt, dataHoraPt, controlarInstancia }: any) {
-  const evolution = item.evolution || {};
-  const conectado = Boolean(evolution.conectado);
-  const qr = evolution.qrcode || item.evolution_qrcode;
-
-  return (
-    <div className="bg-zinc-900 border border-zinc-700 rounded-3xl overflow-hidden">
-      <div className="p-5 border-b border-zinc-800">
-        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-          <div>
-            <h3 className="text-2xl font-bold">
-              {item.servicos_ia?.nome || "Serviço"}
-            </h3>
-            <p className="text-gray-400 text-sm mt-1">
-              Plano: {item.planos?.nome || item.plano_id || "-"}
-            </p>
-          </div>
-
-          <StatusBadge status={statusPt(evolution.status || item.evolution_status || "desconectado")} />
-        </div>
-      </div>
-
-      <div className="p-5 grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-5">
-        <div className="bg-zinc-800 border border-zinc-700 rounded-3xl p-4 flex items-center justify-center min-h-[260px]">
-          {conectado ? (
-            <div className="text-center">
-              <div className="w-20 h-20 rounded-full bg-green-600 flex items-center justify-center mx-auto mb-4 text-3xl font-black">
-                ✓
-              </div>
-              <p className="font-bold text-green-400">WhatsApp conectado</p>
-              <p className="text-gray-400 text-sm mt-1">
-                Esta automação já está pronta para uso.
-              </p>
-            </div>
-          ) : qr ? (
-            <div className="text-center">
-              <img
-                src={qrcodeSrc(qr)}
-                alt="QR Code WhatsApp"
-                className="w-56 h-56 object-contain bg-white rounded-2xl p-2 mx-auto"
-              />
-              <p className="text-gray-400 text-xs mt-3">
-                Escaneie no WhatsApp para conectar.
-              </p>
-            </div>
-          ) : (
-            <div className="text-center">
-              <div className="w-20 h-20 rounded-full bg-yellow-600 flex items-center justify-center mx-auto mb-4 text-3xl font-black">
-                !
-              </div>
-              <p className="font-bold text-yellow-400">
-                QR Code ainda não recebido
-              </p>
-              <p className="text-gray-400 text-sm mt-1">
-                Clique em Novo QR Code ou aguarde a Evolution gerar o QR Code.
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 content-start">
-          <Info label="Instância" value={evolution.instance_name || item.instance_name || "-"} />
-          <Info label="Status" value={statusPt(evolution.status || item.evolution_status || "desconectado")} />
-          <Info label="Número" value={evolution.numero || item.evolution_numero || "-"} />
-          <Info label="Nome conectado" value={evolution.nome || "-"} />
-          <Info label="Vencimento" value={dataPt(item.data_expiracao)} />
-          <Info label="Atualizado em" value={dataHoraPt(evolution.atualizado_em)} />
-
-          <div className="md:col-span-2 grid grid-cols-2 xl:grid-cols-4 gap-3 mt-2">
-            <button
-              onClick={() => controlarInstancia(item.id, "status")}
-              className="bg-blue-600 hover:bg-blue-700 py-3 rounded-2xl font-bold text-sm"
-            >
-              Atualizar
-            </button>
-
-            <button
-              onClick={() => controlarInstancia(item.id, "qrcode")}
-              className="bg-yellow-600 hover:bg-yellow-700 py-3 rounded-2xl font-bold text-sm"
-            >
-              Novo QR Code
-            </button>
-
-            <button
-              onClick={() => controlarInstancia(item.id, "reiniciar")}
-              className="bg-purple-600 hover:bg-purple-700 py-3 rounded-2xl font-bold text-sm"
-            >
-              Reiniciar
-            </button>
-
-            <button
-              onClick={() => {
-                if (confirm("Deseja realmente desconectar este WhatsApp?")) {
-                  controlarInstancia(item.id, "desconectar");
-                }
-              }}
-              className="bg-red-600 hover:bg-red-700 py-3 rounded-2xl font-bold text-sm"
-            >
-              Desconectar
-            </button>
-          </div>
-
-          <div className="md:col-span-2 bg-zinc-800 border border-zinc-700 rounded-2xl p-4">
-            <p className="text-gray-400 text-xs mb-1">Orientação</p>
-            <p className="text-sm text-gray-300">
-              Cada serviço usa uma conexão própria. Para usar mais de uma IA, conecte um WhatsApp em cada serviço contratado.
-            </p>
-          </div>
-        </div>
       </div>
     </div>
   );
