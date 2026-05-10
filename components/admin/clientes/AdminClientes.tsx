@@ -90,15 +90,64 @@ export default function AdminClientes({
       const passouBusca = texto.includes(busca.toLowerCase());
 
       const passouFiltro =
-        filtroStatus === "todos" ? true : cliente.status === filtroStatus;
+        filtroStatus === "todos"
+          ? true
+          : cliente.status === filtroStatus;
 
       return passouBusca && passouFiltro;
     });
   }, [clientesNormalizados, busca, filtroStatus]);
 
-  async function acaoCliente(clienteId: string, acao: string) {
+  async function abrirPainelCliente(clienteId: string) {
     try {
-      setCarregandoId(`${clienteId}_${acao}`);
+      const res = await fetch(
+        "/api/admin/acessar-cliente",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+            "x-admin-token":
+              adminToken,
+          },
+          body: JSON.stringify({
+            clienteId,
+          }),
+        }
+      );
+
+      const data = await res.json();
+
+      if (
+        !res.ok ||
+        data.error ||
+        !data.url
+      ) {
+        alert(
+          data.error ||
+            "Erro ao abrir painel do cliente."
+        );
+        return;
+      }
+
+      window.open(data.url, "_blank");
+    } catch (error) {
+      console.log(error);
+
+      alert(
+        "Erro ao abrir painel do cliente."
+      );
+    }
+  }
+
+  async function acaoCliente(
+    clienteId: string,
+    acao: string
+  ) {
+    try {
+      setCarregandoId(
+        `${clienteId}_${acao}`
+      );
 
       if (acao === "excluir") {
         const confirmar = confirm(
@@ -107,76 +156,82 @@ export default function AdminClientes({
 
         if (!confirmar) return;
 
-        const res = await fetch("/api/admin/excluir-cliente", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-admin-token": adminToken,
-          },
-          body: JSON.stringify({
-            cliente_id: clienteId,
-          }),
-        });
+        const res = await fetch(
+          "/api/admin/excluir-cliente",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+              "x-admin-token":
+                adminToken,
+            },
+            body: JSON.stringify({
+              cliente_id: clienteId,
+            }),
+          }
+        );
 
-        const data = await res.json();
+        const data =
+          await res.json();
 
         if (!res.ok || data.error) {
-          alert(data.error || "Erro ao excluir cliente.");
+          alert(
+            data.error ||
+              "Erro ao excluir cliente."
+          );
           return;
         }
 
         alert("Cliente excluído.");
+
         await carregarClientes();
+
         return;
       }
 
       if (acao === "acessar") {
-        const res = await fetch("/api/admin/acessar-cliente", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-admin-token": adminToken,
-          },
-          body: JSON.stringify({
-            clienteId,
-          }),
-        });
-
-        const data = await res.json();
-
-        if (!res.ok || data.error) {
-          alert(data.error || "Erro ao acessar cliente.");
-          return;
-        }
-
-        if (data.url) {
-          window.open(data.url, "_blank");
-        }
+        await abrirPainelCliente(
+          clienteId
+        );
 
         return;
       }
 
-      const res = await fetch("/api/admin/cliente-acao", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-admin-token": adminToken,
-        },
-        body: JSON.stringify({
-          cliente_id: clienteId,
-          acao,
-        }),
-      });
+      const res = await fetch(
+        "/api/admin/cliente-acao",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+            "x-admin-token":
+              adminToken,
+          },
+          body: JSON.stringify({
+            cliente_id: clienteId,
+            acao,
+          }),
+        }
+      );
 
-      const data = await res.json();
+      const data =
+        await res.json();
 
       if (!res.ok || data.error) {
-        alert(data.error || "Erro ao executar ação.");
+        alert(
+          data.error ||
+            "Erro ao executar ação."
+        );
+
         return;
       }
 
       if (data.link) {
-        await navigator.clipboard.writeText(data.link);
+        await navigator.clipboard.writeText(
+          data.link
+        );
+
         alert("Link copiado.");
       }
 
@@ -195,26 +250,33 @@ export default function AdminClientes({
       await carregarClientes();
     } catch (error) {
       console.log(error);
+
       alert("Erro interno.");
     } finally {
       setCarregandoId("");
     }
   }
 
-  const totalAtivos = clientesNormalizados.filter(
-    (c: any) => c.status === "ativo"
-  ).length;
+  const totalAtivos =
+    clientesNormalizados.filter(
+      (c: any) =>
+        c.status === "ativo"
+    ).length;
 
-  const totalVencidos = clientesNormalizados.filter(
-    (c: any) => c.status === "vencido"
-  ).length;
+  const totalVencidos =
+    clientesNormalizados.filter(
+      (c: any) =>
+        c.status === "vencido"
+    ).length;
 
-  const totalPendentes = clientesNormalizados.filter(
-    (c: any) =>
-      c.status === "aguardando_pagamento" ||
-      c.status === "bloqueado" ||
-      c.status === "suspenso"
-  ).length;
+  const totalPendentes =
+    clientesNormalizados.filter(
+      (c: any) =>
+        c.status ===
+          "aguardando_pagamento" ||
+        c.status === "bloqueado" ||
+        c.status === "suspenso"
+    ).length;
 
   return (
     <div className="space-y-6">
@@ -226,7 +288,9 @@ export default function AdminClientes({
             </h2>
 
             <p className="text-gray-500 mt-2">
-              Gerencie suporte, cobrança, acesso e status dos clientes.
+              Gerencie suporte,
+              cobrança, acesso e
+              status dos clientes.
             </p>
           </div>
         </div>
@@ -235,33 +299,59 @@ export default function AdminClientes({
       <ClientesFiltros
         busca={busca}
         setBusca={setBusca}
-        filtroStatus={filtroStatus}
-        setFiltroStatus={setFiltroStatus}
+        filtroStatus={
+          filtroStatus
+        }
+        setFiltroStatus={
+          setFiltroStatus
+        }
       />
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-        <ResumoMini titulo="Total" valor={clientesNormalizados.length} />
+        <ResumoMini
+          titulo="Total"
+          valor={
+            clientesNormalizados.length
+          }
+        />
 
-        <ResumoMini titulo="Ativos" valor={totalAtivos} />
+        <ResumoMini
+          titulo="Ativos"
+          valor={totalAtivos}
+        />
 
-        <ResumoMini titulo="Vencidos" valor={totalVencidos} />
+        <ResumoMini
+          titulo="Vencidos"
+          valor={totalVencidos}
+        />
 
-        <ResumoMini titulo="Pendentes" valor={totalPendentes} />
+        <ResumoMini
+          titulo="Pendentes"
+          valor={totalPendentes}
+        />
       </div>
 
       <div className="space-y-5">
-        {clientesFiltrados.map((cliente: any) => (
-          <ClienteCard
-            key={cliente.id}
-            cliente={cliente}
-            loading={carregandoId.includes(cliente.id)}
-            acaoCliente={acaoCliente}
-          />
-        ))}
+        {clientesFiltrados.map(
+          (cliente: any) => (
+            <ClienteCard
+              key={cliente.id}
+              cliente={cliente}
+              loading={carregandoId.includes(
+                cliente.id
+              )}
+              acaoCliente={
+                acaoCliente
+              }
+            />
+          )
+        )}
 
-        {clientesFiltrados.length === 0 && (
+        {clientesFiltrados.length ===
+          0 && (
           <div className="bg-[#0D0D0D] border border-white/10 rounded-3xl p-10 text-center text-gray-500">
-            Nenhum cliente encontrado.
+            Nenhum cliente
+            encontrado.
           </div>
         )}
       </div>
