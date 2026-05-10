@@ -7,7 +7,6 @@ function AguardandoPagamentoContent() {
   const params = useSearchParams();
 
   const clienteId = params.get("cliente");
-
   const tokenUrl = params.get("token");
 
   const paymentId =
@@ -47,9 +46,7 @@ function AguardandoPagamentoContent() {
     try {
       await fetch(
         `/api/mercadopago/sincronizar?payment_id=${paymentId}`,
-        {
-          cache: "no-store",
-        }
+        { cache: "no-store" }
       );
     } catch (error) {
       console.log("Erro ao sincronizar pagamento:", error);
@@ -64,25 +61,24 @@ function AguardandoPagamentoContent() {
     try {
       const res = await fetch(
         `/api/cliente/status?cliente=${clienteId}`,
-        {
-          cache: "no-store",
-        }
+        { cache: "no-store" }
       );
 
       const data = await res.json();
+
+      if (data.token && !tokenFinal) {
+        localStorage.setItem("clienteToken", data.token);
+        setTokenFinal(data.token);
+      }
 
       if (data.status) {
         setStatus(data.status);
       }
 
-      if (
-        data.status === "ativo" &&
-        data.cliente_servicos?.length
-      ) {
+      if (data.status === "ativo" && data.cliente_servicos?.length) {
         const servicoAtivo =
           data.cliente_servicos.find(
-            (s: any) =>
-              String(s.status || "").toLowerCase() === "ativo"
+            (s: any) => String(s.status || "").toLowerCase() === "ativo"
           ) || data.cliente_servicos[0];
 
         setClienteServicoId(servicoAtivo.id);
@@ -95,13 +91,15 @@ function AguardandoPagamentoContent() {
           setEvolutionStatus(servicoAtivo.evolution_status);
         }
 
+        const tokenParaUso = tokenFinal || data.token || "";
+
         if (servicoAtivo.evolution_status === "open") {
-          irParaCliente();
+          irParaCliente(tokenParaUso);
           return;
         }
 
-        if (tokenFinal) {
-          await carregarQrCode(servicoAtivo.id);
+        if (tokenParaUso) {
+          await carregarQrCode(servicoAtivo.id, tokenParaUso);
         }
       }
     } catch (error) {
@@ -109,8 +107,8 @@ function AguardandoPagamentoContent() {
     }
   }
 
-  async function carregarQrCode(idServico: string) {
-    if (!tokenFinal) {
+  async function carregarQrCode(idServico: string, tokenUso = tokenFinal) {
+    if (!tokenUso) {
       console.log("Token ausente para gerar QR Code.");
       return;
     }
@@ -120,10 +118,10 @@ function AguardandoPagamentoContent() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-cliente-token": tokenFinal,
+          "x-cliente-token": tokenUso,
         },
         body: JSON.stringify({
-          token: tokenFinal,
+          token: tokenUso,
           cliente_servico_id: idServico,
           acao: "qrcode",
         }),
@@ -177,20 +175,20 @@ function AguardandoPagamentoContent() {
       }
 
       if (data.status === "open") {
-        irParaCliente();
+        irParaCliente(tokenFinal);
         return;
       }
 
-      await carregarQrCode(clienteServicoId);
+      await carregarQrCode(clienteServicoId, tokenFinal);
     } catch (error) {
       console.log("Erro ao atualizar evolution:", error);
     }
   }
 
-  function irParaCliente() {
+  function irParaCliente(tokenUso = tokenFinal) {
     window.location.href =
       `/cliente?cliente=${clienteId}` +
-      (tokenFinal ? `&token=${tokenFinal}` : "");
+      (tokenUso ? `&token=${tokenUso}` : "");
   }
 
   useEffect(() => {
@@ -301,7 +299,7 @@ function AguardandoPagamentoContent() {
           </button>
 
           <button
-            onClick={irParaCliente}
+            onClick={() => irParaCliente()}
             className="mt-3 w-full bg-zinc-800 hover:bg-zinc-700 px-6 py-3 rounded-2xl font-bold"
           >
             Ir para área do cliente

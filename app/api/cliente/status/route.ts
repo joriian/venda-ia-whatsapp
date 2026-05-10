@@ -57,6 +57,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ...cliente,
       status: statusFinal,
+      token: cliente.session_token || "",
       cliente_servicos: servicos || [],
     });
   } catch (error: any) {
