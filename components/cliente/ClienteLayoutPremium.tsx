@@ -17,6 +17,7 @@ export default function ClienteLayoutPremium({
     ["planos", "Contratar planos"],
     ["pagamentos", "Pagamentos"],
     ["logs", "Logs IA"],
+    ["suporte", "Suporte"],
     ["conta", "Minha conta"],
   ];
 
@@ -37,14 +38,22 @@ export default function ClienteLayoutPremium({
             </div>
 
             <div>
-              <h1 className="font-black text-xl tracking-wide">NEXORA</h1>
-              <p className="text-xs text-gray-500">Área do cliente</p>
+              <h1 className="font-black text-xl tracking-wide">
+                NEXORA
+              </h1>
+              <p className="text-xs text-gray-500">
+                Área do cliente
+              </p>
             </div>
           </div>
 
           <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-4 mb-5">
-            <p className="text-gray-500 text-xs mb-1">Cliente</p>
-            <p className="font-bold break-words">{cliente?.nome || "Cliente"}</p>
+            <p className="text-gray-500 text-xs mb-1">
+              Cliente
+            </p>
+            <p className="font-bold break-words">
+              {cliente?.nome || "Cliente"}
+            </p>
             <p className="text-gray-500 text-xs break-all mt-1">
               {cliente?.email || "-"}
             </p>
@@ -90,9 +99,11 @@ export default function ClienteLayoutPremium({
                 <p className="text-green-400 font-bold text-xs uppercase tracking-wider">
                   Painel do cliente
                 </p>
+
                 <h2 className="text-2xl md:text-3xl font-black mt-1">
                   Olá, {cliente?.nome || "cliente"}
                 </h2>
+
                 <p className="text-gray-500 text-sm break-all">
                   {cliente?.email || "-"}
                 </p>
@@ -132,7 +143,9 @@ export default function ClienteLayoutPremium({
             </div>
           </header>
 
-          <div className="p-4 md:p-6 max-w-7xl mx-auto">{children}</div>
+          <div className="p-4 md:p-6 max-w-7xl mx-auto">
+            {children}
+          </div>
         </section>
       </div>
     </main>

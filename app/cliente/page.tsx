@@ -34,6 +34,12 @@ export default function ClientePage() {
   const [enviandoCodigo, setEnviandoCodigo] = useState(false);
   const [verificandoCodigo, setVerificandoCodigo] = useState(false);
 
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [assuntoTicket, setAssuntoTicket] = useState("");
+  const [mensagemTicket, setMensagemTicket] = useState("");
+  const [abrindoTicket, setAbrindoTicket] = useState(false);
+  const [carregandoTickets, setCarregandoTickets] = useState(false);
+
   useEffect(() => {
     iniciarSessao();
   }, []);
@@ -82,6 +88,7 @@ export default function ClientePage() {
 
       setErroSessao("");
       setDados(data);
+
       if (data?.cliente?.telefone) {
         setTelefoneVerificacao(data.cliente.telefone);
       }
@@ -158,21 +165,10 @@ export default function ClientePage() {
 
       await carregarDados();
 
-      if (acao === "status") {
-        alert("Status atualizado.");
-      }
-
-      if (acao === "qrcode") {
-        alert("QR Code solicitado. Aguarde alguns segundos e clique em Atualizar.");
-      }
-
-      if (acao === "reiniciar") {
-        alert("Instância reiniciada.");
-      }
-
-      if (acao === "desconectar") {
-        alert("WhatsApp desconectado.");
-      }
+      if (acao === "status") alert("Status atualizado.");
+      if (acao === "qrcode") alert("QR Code solicitado. Aguarde alguns segundos e clique em Atualizar.");
+      if (acao === "reiniciar") alert("Instância reiniciada.");
+      if (acao === "desconectar") alert("WhatsApp desconectado.");
     } catch (error) {
       console.error(error);
       alert("Erro ao controlar instância.");
@@ -215,7 +211,84 @@ export default function ClientePage() {
     if (aba === "logs" && token) {
       carregarLogsIa();
     }
+
+    if (aba === "suporte" && token) {
+      carregarTickets();
+    }
   }, [aba, filtroLog, token]);
+
+  async function carregarTickets() {
+    setCarregandoTickets(true);
+
+    try {
+      const res = await fetch("/api/cliente/suporte", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          token,
+          acao: "listar",
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        alert(data.error || "Erro ao carregar tickets.");
+        return;
+      }
+
+      setTickets(data.tickets || []);
+    } catch (error) {
+      console.error(error);
+      alert("Erro ao carregar tickets.");
+    } finally {
+      setCarregandoTickets(false);
+    }
+  }
+
+  async function abrirTicket() {
+    if (!assuntoTicket.trim() || !mensagemTicket.trim()) {
+      alert("Preencha assunto e mensagem.");
+      return;
+    }
+
+    setAbrindoTicket(true);
+
+    try {
+      const res = await fetch("/api/cliente/suporte", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          token,
+          acao: "criar",
+          assunto: assuntoTicket,
+          mensagem: mensagemTicket,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        alert(data.error || "Erro ao abrir ticket.");
+        return;
+      }
+
+      setAssuntoTicket("");
+      setMensagemTicket("");
+
+      alert("Ticket aberto com sucesso.");
+      await carregarTickets();
+    } catch (error) {
+      console.error(error);
+      alert("Erro ao abrir ticket.");
+    } finally {
+      setAbrindoTicket(false);
+    }
+  }
 
   async function enviarCodigoVerificacao() {
     setEnviandoCodigo(true);
@@ -333,33 +406,31 @@ export default function ClientePage() {
     }
   }
 
- function limparSessaoLocal() {
-  localStorage.removeItem("clienteToken");
-  localStorage.removeItem("clienteId");
-  localStorage.removeItem("clienteNome");
-  localStorage.removeItem("clienteEmail");
-  localStorage.removeItem("clienteAcessoAdmin");
+  function limparSessaoLocal() {
+    localStorage.removeItem("clienteToken");
+    localStorage.removeItem("clienteId");
+    localStorage.removeItem("clienteNome");
+    localStorage.removeItem("clienteEmail");
+    localStorage.removeItem("clienteAcessoAdmin");
 
-  sessionStorage.clear();
+    sessionStorage.clear();
 
-  document.cookie =
-    "clienteToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    document.cookie =
+      "clienteToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
 
-  document.cookie =
-    "adminToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-}
+    document.cookie =
+      "adminToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+  }
 
-function sair() {
-  limparSessaoLocal();
+  function sair() {
+    limparSessaoLocal();
+    window.location.href = "/login";
+  }
 
-  window.location.href = "/login";
-}
-
-function irLogin() {
-  limparSessaoLocal();
-
-  window.location.href = "/login";
-}
+  function irLogin() {
+    limparSessaoLocal();
+    window.location.href = "/login";
+  }
 
   function dinheiro(valor: number) {
     return Number(valor || 0).toLocaleString("pt-BR", {
@@ -382,6 +453,11 @@ function irLogin() {
     const mapa: AnyObj = {
       ativo: "Ativo",
       vencido: "Vencido",
+      bloqueado: "Bloqueado",
+      parcial: "Parcial",
+      aberto: "Aberto",
+      respondido: "Respondido",
+      fechado: "Fechado",
       aguardando_pagamento: "Aguardando pagamento",
       approved: "Aprovado",
       pending: "Pendente",
@@ -458,7 +534,9 @@ function irLogin() {
         servico.nome,
         servico.slug,
         servico.descricao,
-        ...(servico.planos || []).map((p: any) => `${p.nome} ${p.descricao} ${p.valor}`),
+        ...(servico.planos || []).map(
+          (p: any) => `${p.nome} ${p.descricao} ${p.valor}`
+        ),
       ]
         .join(" ")
         .toLowerCase();
@@ -482,9 +560,14 @@ function irLogin() {
     return (
       <main className="min-h-screen bg-black text-white flex items-center justify-center p-6">
         <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-6 max-w-xl w-full">
-          <h1 className="text-2xl font-bold mb-3">Não foi possível abrir a área do cliente</h1>
+          <h1 className="text-2xl font-bold mb-3">
+            Não foi possível abrir a área do cliente
+          </h1>
           <p className="text-gray-300 mb-4">{erroSessao}</p>
-          <button onClick={irLogin} className="bg-green-600 hover:bg-green-700 px-5 py-3 rounded-xl font-bold">
+          <button
+            onClick={irLogin}
+            className="bg-green-600 hover:bg-green-700 px-5 py-3 rounded-xl font-bold"
+          >
             Ir para login
           </button>
         </div>
@@ -500,397 +583,591 @@ function irLogin() {
       onAtualizar={() => carregarDados()}
       onSair={sair}
     >
-        {aba === "resumo" && (
-          <section className="space-y-6">
-           <ClienteMetricasPremium
-  servicosAtivos={servicosAtivos.length}
-  totalServicos={servicosCliente.length}
-  whatsappsConectados={servicosConectados.length}
-  pagamentos={pagamentos.length}
-  telefoneVerificado={Boolean(cliente?.telefone_verificado)}
-/>
+      {aba === "resumo" && (
+        <section className="space-y-6">
+          <ClienteMetricasPremium
+            servicosAtivos={servicosAtivos.length}
+            totalServicos={servicosCliente.length}
+            whatsappsConectados={servicosConectados.length}
+            pagamentos={pagamentos.length}
+            telefoneVerificado={Boolean(cliente?.telefone_verificado)}
+          />
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              <PainelConta cliente={cliente} statusPt={statusPt} />
-
-              <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h2 className="text-xl font-bold">Últimos pagamentos</h2>
-                    <p className="text-gray-400 text-sm">Resumo dos 5 mais recentes.</p>
-                  </div>
-                  <button onClick={() => setAba("pagamentos")} className="text-green-400 font-bold text-sm">
-                    Ver todos
-                  </button>
-                </div>
-
-                <ListaPagamentos pagamentos={pagamentos.slice(0, 5)} statusPt={statusPt} dinheiro={dinheiro} dataPt={dataPt} />
-              </div>
-            </div>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <PainelConta cliente={cliente} statusPt={statusPt} />
 
             <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
-              <div className="flex items-center justify-between gap-4 mb-5">
+              <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h2 className="text-xl font-bold">Seus serviços WhatsApp</h2>
-                  <p className="text-gray-400 text-sm">Cada serviço possui uma instância própria.</p>
+                  <h2 className="text-xl font-bold">Últimos pagamentos</h2>
+                  <p className="text-gray-400 text-sm">
+                    Resumo dos 5 mais recentes.
+                  </p>
                 </div>
-                <button onClick={() => setAba("whatsapp")} className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-xl font-bold text-sm">
-                  Gerenciar
+
+                <button
+                  onClick={() => setAba("pagamentos")}
+                  className="text-green-400 font-bold text-sm"
+                >
+                  Ver todos
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                {servicosCliente.slice(0, 4).map((item: any) => (
-                  <ServicoResumoCard key={item.id} item={item} statusPt={statusPt} dataPt={dataPt} />
-                ))}
-
-                {servicosCliente.length === 0 && <Vazio texto="Você ainda não possui serviços contratados." />}
-              </div>
+              <ListaPagamentos
+                pagamentos={pagamentos.slice(0, 5)}
+                statusPt={statusPt}
+                dinheiro={dinheiro}
+                dataPt={dataPt}
+              />
             </div>
-          </section>
-        )}
+          </div>
 
-        {aba === "whatsapp" && (
-          <section className="space-y-6">
-            <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
-              <h2 className="text-2xl font-bold">Conexões WhatsApp</h2>
-              <p className="text-gray-400 text-sm mt-1">
-                Cada serviço tem uma instância separada para evitar conflito entre automações.
+          <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
+            <div className="flex items-center justify-between gap-4 mb-5">
+              <div>
+                <h2 className="text-xl font-bold">Seus serviços WhatsApp</h2>
+                <p className="text-gray-400 text-sm">
+                  Cada serviço possui uma instância própria.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setAba("whatsapp")}
+                className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-xl font-bold text-sm"
+              >
+                Gerenciar
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              {servicosCliente.slice(0, 4).map((item: any) => (
+                <ServicoResumoCard
+                  key={item.id}
+                  item={item}
+                  statusPt={statusPt}
+                  dataPt={dataPt}
+                />
+              ))}
+
+              {servicosCliente.length === 0 && (
+                <Vazio texto="Você ainda não possui serviços contratados." />
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {aba === "whatsapp" && (
+        <section className="space-y-6">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
+            <h2 className="text-2xl font-bold">Conexões WhatsApp</h2>
+            <p className="text-gray-400 text-sm mt-1">
+              Cada serviço tem uma instância separada para evitar conflito entre automações.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+            {servicosCliente.map((item: any) => (
+              <WhatsAppServicoCard
+                key={item.id}
+                item={item}
+                qrcodeSrc={qrcodeSrc}
+                statusPt={statusPt}
+                dataPt={dataPt}
+                dataHoraPt={dataHoraPt}
+                controlarInstancia={controlarInstancia}
+              />
+            ))}
+
+            {servicosCliente.length === 0 && (
+              <Vazio texto="Nenhum serviço disponível para conexão." />
+            )}
+          </div>
+        </section>
+      )}
+
+      {aba === "servicos" && (
+        <section className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
+          <h2 className="text-2xl font-bold mb-2">Meus serviços</h2>
+          <p className="text-gray-400 text-sm mb-6">
+            Veja planos, vencimentos e status de cada serviço contratado.
+          </p>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            {servicosCliente.map((item: any) => (
+              <ServicoDetalheCard
+                key={item.id}
+                item={item}
+                statusPt={statusPt}
+                dataPt={dataPt}
+              />
+            ))}
+
+            {servicosCliente.length === 0 && (
+              <Vazio texto="Você ainda não possui serviços contratados." />
+            )}
+          </div>
+        </section>
+      )}
+
+      {aba === "pagamentos" && (
+        <section className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
+          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-6">
+            <div>
+              <h2 className="text-2xl font-bold">Histórico de pagamentos</h2>
+              <p className="text-gray-400 text-sm">
+                Exibindo os últimos 5 pagamentos encontrados.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-              {servicosCliente.map((item: any) => (
-                <WhatsAppServicoCard
-                  key={item.id}
-                  item={item}
-                  qrcodeSrc={qrcodeSrc}
-                  statusPt={statusPt}
-                  dataPt={dataPt}
-                  dataHoraPt={dataHoraPt}
-                  controlarInstancia={controlarInstancia}
-                />
-              ))}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full lg:w-auto">
+              <input
+                value={buscaPagamento}
+                onChange={(e) => setBuscaPagamento(e.target.value)}
+                placeholder="Pesquisar pagamento..."
+                className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700 min-w-[260px]"
+              />
 
-              {servicosCliente.length === 0 && <Vazio texto="Nenhum serviço disponível para conexão." />}
+              <select
+                value={filtroPagamento}
+                onChange={(e) => setFiltroPagamento(e.target.value)}
+                className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700"
+              >
+                <option value="todos">Todos</option>
+                <option value="aprovado">Aprovado</option>
+                <option value="pendente">Pendente</option>
+                <option value="recusado">Recusado</option>
+                <option value="cancelado">Cancelado</option>
+              </select>
             </div>
-          </section>
-        )}
+          </div>
 
-        {aba === "servicos" && (
-          <section className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
-            <h2 className="text-2xl font-bold mb-2">Meus serviços</h2>
-            <p className="text-gray-400 text-sm mb-6">Veja planos, vencimentos e status de cada serviço contratado.</p>
+          <TabelaPagamentos
+            pagamentos={pagamentosFiltrados}
+            statusPt={statusPt}
+            dinheiro={dinheiro}
+            dataPt={dataPt}
+          />
+        </section>
+      )}
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-              {servicosCliente.map((item: any) => (
-                <ServicoDetalheCard key={item.id} item={item} statusPt={statusPt} dataPt={dataPt} />
-              ))}
-
-              {servicosCliente.length === 0 && <Vazio texto="Você ainda não possui serviços contratados." />}
+      {aba === "logs" && (
+        <section className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
+          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-6">
+            <div>
+              <h2 className="text-2xl font-bold">Logs da IA</h2>
+              <p className="text-gray-400 text-sm">
+                Veja as últimas mensagens recebidas e se foram enviadas para a automação.
+              </p>
             </div>
-          </section>
-        )}
 
-        {aba === "pagamentos" && (
-          <section className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
-            <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 w-full lg:w-auto">
+              <input
+                value={buscaLog}
+                onChange={(e) => setBuscaLog(e.target.value)}
+                placeholder="Buscar mensagem, remetente, instância..."
+                className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700 min-w-[260px]"
+              />
+
+              <select
+                value={filtroLog}
+                onChange={(e) => setFiltroLog(e.target.value)}
+                className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700"
+              >
+                <option value="todos">Todos</option>
+                <option value="enviado">Enviados ao n8n</option>
+                <option value="erro">Com erro</option>
+              </select>
+
+              <button
+                onClick={carregarLogsIa}
+                className="bg-green-600 hover:bg-green-700 rounded-2xl font-bold py-3"
+              >
+                {carregandoLogs ? "Buscando..." : "Buscar"}
+              </button>
+            </div>
+          </div>
+
+          <LogsIaSection logs={logsIa} dataHoraPt={dataHoraPt} />
+        </section>
+      )}
+
+      {aba === "suporte" && (
+        <SuporteSection
+          tickets={tickets}
+          assuntoTicket={assuntoTicket}
+          setAssuntoTicket={setAssuntoTicket}
+          mensagemTicket={mensagemTicket}
+          setMensagemTicket={setMensagemTicket}
+          abrirTicket={abrirTicket}
+          abrindoTicket={abrindoTicket}
+          carregarTickets={carregarTickets}
+          carregandoTickets={carregandoTickets}
+          dataHoraPt={dataHoraPt}
+        />
+      )}
+
+      {aba === "planos" && (
+        <section className="space-y-6">
+          {!cliente?.telefone_verificado && (
+            <div className="bg-yellow-900/30 border border-yellow-700 rounded-3xl p-5">
+              <h2 className="text-xl font-bold text-yellow-400">
+                Verifique seu WhatsApp antes de contratar
+              </h2>
+              <p className="text-gray-300 text-sm mt-2">
+                Para sua segurança, você precisa confirmar o número cadastrado antes de comprar ou renovar um plano.
+              </p>
+              <button
+                onClick={() => setAba("conta")}
+                className="mt-4 bg-yellow-600 hover:bg-yellow-700 px-5 py-3 rounded-2xl font-bold"
+              >
+                Verificar agora
+              </button>
+            </div>
+          )}
+
+          <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
+            <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-bold">Histórico de pagamentos</h2>
-                <p className="text-gray-400 text-sm">Exibindo os últimos 5 pagamentos encontrados.</p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full lg:w-auto">
-                <input
-                  value={buscaPagamento}
-                  onChange={(e) => setBuscaPagamento(e.target.value)}
-                  placeholder="Pesquisar pagamento..."
-                  className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700 min-w-[260px]"
-                />
-
-                <select
-                  value={filtroPagamento}
-                  onChange={(e) => setFiltroPagamento(e.target.value)}
-                  className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700"
-                >
-                  <option value="todos">Todos</option>
-                  <option value="aprovado">Aprovado</option>
-                  <option value="pendente">Pendente</option>
-                  <option value="recusado">Recusado</option>
-                  <option value="cancelado">Cancelado</option>
-                </select>
-              </div>
-            </div>
-
-            <TabelaPagamentos pagamentos={pagamentosFiltrados} statusPt={statusPt} dinheiro={dinheiro} dataPt={dataPt} />
-          </section>
-        )}
-
-        {aba === "logs" && (
-          <section className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
-            <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-6">
-              <div>
-                <h2 className="text-2xl font-bold">Logs da IA</h2>
-                <p className="text-gray-400 text-sm">
-                  Veja as últimas mensagens recebidas e se foram enviadas para a automação.
+                <h2 className="text-2xl font-bold">
+                  Contratar ou renovar serviços
+                </h2>
+                <p className="text-gray-400 text-sm mt-1">
+                  Escolha um serviço e um plano para adicionar à sua conta.
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 w-full lg:w-auto">
+              <input
+                value={buscaPlano}
+                onChange={(e) => setBuscaPlano(e.target.value)}
+                placeholder="Pesquisar serviço ou plano..."
+                className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700 min-w-[280px]"
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-8">
+            {catalogoFiltrado.map((servico: any) => (
+              <div
+                key={servico.id}
+                className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5"
+              >
+                <div className="mb-5">
+                  <h3 className="text-2xl font-bold">{servico.nome}</h3>
+                  <p className="text-gray-400 text-sm mt-1">
+                    {servico.descricao || "Serviço disponível para contratação."}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {(servico.planos || [])
+                    .filter((p: any) => p.ativo)
+                    .map((plano: any) => (
+                      <div
+                        key={plano.id}
+                        className={`relative bg-zinc-800 border rounded-3xl p-5 ${
+                          plano.destaque ? "border-green-500" : "border-zinc-700"
+                        }`}
+                      >
+                        {plano.destaque && (
+                          <span className="absolute -top-3 left-4 bg-green-600 px-3 py-1 rounded-full text-xs font-bold">
+                            Mais escolhido
+                          </span>
+                        )}
+
+                        <h4 className="text-xl font-bold">{plano.nome}</h4>
+                        <p className="text-gray-400 text-sm mt-2 min-h-[42px]">
+                          {plano.descricao || "Plano disponível."}
+                        </p>
+
+                        <p className="text-4xl font-black mt-5">
+                          {dinheiro(plano.valor)}
+                        </p>
+                        <p className="text-gray-400 text-sm mt-1">
+                          {plano.meses} {plano.meses === 1 ? "mês" : "meses"}
+                        </p>
+
+                        <input
+                          value={cupomPorPlano[plano.id] || ""}
+                          onChange={(e) =>
+                            setCupomPorPlano((atual) => ({
+                              ...atual,
+                              [plano.id]: e.target.value.toUpperCase(),
+                            }))
+                          }
+                          placeholder="Cupom de desconto"
+                          className="mt-5 w-full p-3 rounded-2xl bg-zinc-900 border border-zinc-700 text-sm"
+                        />
+
+                        <button
+                          onClick={() => contratar(servico.id, plano.id)}
+                          disabled={pagando === plano.id || !cliente?.telefone_verificado}
+                          className="mt-4 w-full bg-green-600 hover:bg-green-700 disabled:bg-zinc-600 py-3 rounded-2xl font-bold"
+                        >
+                          {!cliente?.telefone_verificado
+                            ? "Verifique o WhatsApp"
+                            : pagando === plano.id
+                            ? "Gerando pagamento..."
+                            : "Contratar"}
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            ))}
+
+            {catalogoFiltrado.length === 0 && (
+              <Vazio texto="Nenhum serviço disponível para contratação." />
+            )}
+          </div>
+        </section>
+      )}
+
+      {aba === "conta" && (
+        <section className="grid gap-6">
+          <PainelConta cliente={cliente} statusPt={statusPt} grande />
+
+          <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
+            <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 mb-5">
+              <div>
+                <h2 className="text-2xl font-bold">Verificação do WhatsApp</h2>
+                <p className="text-gray-400 text-sm mt-1">
+                  Confirme seu número para liberar compras, renovações e notificações importantes.
+                </p>
+              </div>
+
+              <StatusBadge
+                status={cliente?.telefone_verificado ? "Conectado" : "Pendente"}
+              />
+            </div>
+
+            {cliente?.telefone_verificado ? (
+              <div className="bg-green-900/30 border border-green-700 rounded-2xl p-4">
+                <p className="font-bold text-green-400">WhatsApp verificado</p>
+                <p className="text-gray-300 text-sm mt-1">
+                  Número confirmado: {cliente?.telefone || "-"}
+                </p>
+                <p className="text-gray-400 text-xs mt-1">
+                  Verificado em: {dataHoraPt(cliente?.telefone_verificado_em)}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 xl:grid-cols-[1fr_180px_1fr_180px] gap-3">
                 <input
-                  value={buscaLog}
-                  onChange={(e) => setBuscaLog(e.target.value)}
-                  placeholder="Buscar mensagem, remetente, instância..."
-                  className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700 min-w-[260px]"
+                  value={telefoneVerificacao}
+                  onChange={(e) => setTelefoneVerificacao(e.target.value)}
+                  placeholder="Telefone com DDD"
+                  className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700"
                 />
 
-                <select
-                  value={filtroLog}
-                  onChange={(e) => setFiltroLog(e.target.value)}
-                  className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700"
-                >
-                  <option value="todos">Todos</option>
-                  <option value="enviado">Enviados ao n8n</option>
-                  <option value="erro">Com erro</option>
-                </select>
-
                 <button
-                  onClick={carregarLogsIa}
-                  className="bg-green-600 hover:bg-green-700 rounded-2xl font-bold py-3"
+                  onClick={enviarCodigoVerificacao}
+                  disabled={enviandoCodigo}
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-zinc-600 rounded-2xl font-bold py-3"
                 >
-                  {carregandoLogs ? "Buscando..." : "Buscar"}
+                  {enviandoCodigo ? "Enviando..." : "Enviar código"}
                 </button>
-              </div>
-            </div>
 
-            <LogsIaSection logs={logsIa} dataHoraPt={dataHoraPt} />
-          </section>
-        )}
+                <input
+                  value={codigoVerificacao}
+                  onChange={(e) =>
+                    setCodigoVerificacao(e.target.value.replace(/\D/g, "").slice(0, 6))
+                  }
+                  placeholder="Código recebido"
+                  className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700"
+                />
 
-        {aba === "planos" && (
-          <section className="space-y-6">
-            {!cliente?.telefone_verificado && (
-              <div className="bg-yellow-900/30 border border-yellow-700 rounded-3xl p-5">
-                <h2 className="text-xl font-bold text-yellow-400">Verifique seu WhatsApp antes de contratar</h2>
-                <p className="text-gray-300 text-sm mt-2">
-                  Para sua segurança, você precisa confirmar o número cadastrado antes de comprar ou renovar um plano.
-                </p>
                 <button
-                  onClick={() => setAba("conta")}
-                  className="mt-4 bg-yellow-600 hover:bg-yellow-700 px-5 py-3 rounded-2xl font-bold"
+                  onClick={confirmarCodigoVerificacao}
+                  disabled={verificandoCodigo}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-600 rounded-2xl font-bold py-3"
                 >
-                  Verificar agora
+                  {verificandoCodigo ? "Validando..." : "Confirmar"}
                 </button>
               </div>
             )}
-            <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
-              <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
-                <div>
-                  <h2 className="text-2xl font-bold">Contratar ou renovar serviços</h2>
-                  <p className="text-gray-400 text-sm mt-1">Escolha um serviço e um plano para adicionar à sua conta.</p>
-                </div>
+          </div>
 
-                <input
-                  value={buscaPlano}
-                  onChange={(e) => setBuscaPlano(e.target.value)}
-                  placeholder="Pesquisar serviço ou plano..."
-                  className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700 min-w-[280px]"
-                />
-              </div>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
+            <h2 className="text-2xl font-bold mb-2">Alterar senha</h2>
+            <p className="text-gray-400 text-sm mb-5">
+              Use uma senha forte. A confirmação precisa ser igual à nova senha.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <input
+                type="password"
+                value={senhaAtual}
+                onChange={(e) => setSenhaAtual(e.target.value)}
+                placeholder="Senha atual"
+                className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700"
+              />
+
+              <input
+                type="password"
+                value={novaSenha}
+                onChange={(e) => setNovaSenha(e.target.value)}
+                placeholder="Nova senha"
+                className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700"
+              />
+
+              <input
+                type="password"
+                value={confirmarSenha}
+                onChange={(e) => setConfirmarSenha(e.target.value)}
+                placeholder="Confirmar nova senha"
+                className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700"
+              />
+
+              <button
+                onClick={alterarSenha}
+                disabled={alterandoSenha}
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-600 rounded-2xl font-bold py-3"
+              >
+                {alterandoSenha ? "Alterando..." : "Alterar senha"}
+              </button>
             </div>
-
-            <div className="grid gap-8">
-              {catalogoFiltrado.map((servico: any) => (
-                <div key={servico.id} className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
-                  <div className="mb-5">
-                    <h3 className="text-2xl font-bold">{servico.nome}</h3>
-                    <p className="text-gray-400 text-sm mt-1">{servico.descricao || "Serviço disponível para contratação."}</p>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {(servico.planos || [])
-                      .filter((p: any) => p.ativo)
-                      .map((plano: any) => (
-                        <div
-                          key={plano.id}
-                          className={`relative bg-zinc-800 border rounded-3xl p-5 ${plano.destaque ? "border-green-500" : "border-zinc-700"}`}
-                        >
-                          {plano.destaque && (
-                            <span className="absolute -top-3 left-4 bg-green-600 px-3 py-1 rounded-full text-xs font-bold">
-                              Mais escolhido
-                            </span>
-                          )}
-
-                          <h4 className="text-xl font-bold">{plano.nome}</h4>
-                          <p className="text-gray-400 text-sm mt-2 min-h-[42px]">{plano.descricao || "Plano disponível."}</p>
-
-                          <p className="text-4xl font-black mt-5">{dinheiro(plano.valor)}</p>
-                          <p className="text-gray-400 text-sm mt-1">{plano.meses} {plano.meses === 1 ? "mês" : "meses"}</p>
-
-                          <input
-                            value={cupomPorPlano[plano.id] || ""}
-                            onChange={(e) => setCupomPorPlano((atual) => ({ ...atual, [plano.id]: e.target.value.toUpperCase() }))}
-                            placeholder="Cupom de desconto"
-                            className="mt-5 w-full p-3 rounded-2xl bg-zinc-900 border border-zinc-700 text-sm"
-                          />
-
-                          <button
-                            onClick={() => contratar(servico.id, plano.id)}
-                            disabled={pagando === plano.id || !cliente?.telefone_verificado}
-                            className="mt-4 w-full bg-green-600 hover:bg-green-700 disabled:bg-zinc-600 py-3 rounded-2xl font-bold"
-                          >
-                            {!cliente?.telefone_verificado
-                              ? "Verifique o WhatsApp"
-                              : pagando === plano.id
-                              ? "Gerando pagamento..."
-                              : "Contratar"}
-                          </button>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              ))}
-
-              {catalogoFiltrado.length === 0 && <Vazio texto="Nenhum serviço disponível para contratação." />}
-            </div>
-          </section>
-        )}
-
-        {aba === "conta" && (
-          <section className="grid gap-6">
-            <PainelConta cliente={cliente} statusPt={statusPt} grande />
-
-            <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
-              <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 mb-5">
-                <div>
-                  <h2 className="text-2xl font-bold">Verificação do WhatsApp</h2>
-                  <p className="text-gray-400 text-sm mt-1">
-                    Confirme seu número para liberar compras, renovações e notificações importantes.
-                  </p>
-                </div>
-
-                <StatusBadge status={cliente?.telefone_verificado ? "Conectado" : "Pendente"} />
-              </div>
-
-              {cliente?.telefone_verificado ? (
-                <div className="bg-green-900/30 border border-green-700 rounded-2xl p-4">
-                  <p className="font-bold text-green-400">WhatsApp verificado</p>
-                  <p className="text-gray-300 text-sm mt-1">
-                    Número confirmado: {cliente?.telefone || "-"}
-                  </p>
-                  <p className="text-gray-400 text-xs mt-1">
-                    Verificado em: {dataHoraPt(cliente?.telefone_verificado_em)}
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 xl:grid-cols-[1fr_180px_1fr_180px] gap-3">
-                  <input
-                    value={telefoneVerificacao}
-                    onChange={(e) => setTelefoneVerificacao(e.target.value)}
-                    placeholder="Telefone com DDD"
-                    className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700"
-                  />
-
-                  <button
-                    onClick={enviarCodigoVerificacao}
-                    disabled={enviandoCodigo}
-                    className="bg-green-600 hover:bg-green-700 disabled:bg-zinc-600 rounded-2xl font-bold py-3"
-                  >
-                    {enviandoCodigo ? "Enviando..." : "Enviar código"}
-                  </button>
-
-                  <input
-                    value={codigoVerificacao}
-                    onChange={(e) => setCodigoVerificacao(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                    placeholder="Código recebido"
-                    className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700"
-                  />
-
-                  <button
-                    onClick={confirmarCodigoVerificacao}
-                    disabled={verificandoCodigo}
-                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-600 rounded-2xl font-bold py-3"
-                  >
-                    {verificandoCodigo ? "Validando..." : "Confirmar"}
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
-              <h2 className="text-2xl font-bold mb-2">Alterar senha</h2>
-              <p className="text-gray-400 text-sm mb-5">
-                Use uma senha forte. A confirmação precisa ser igual à nova senha.
-              </p>
-
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <input
-                  type="password"
-                  value={senhaAtual}
-                  onChange={(e) => setSenhaAtual(e.target.value)}
-                  placeholder="Senha atual"
-                  className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700"
-                />
-
-                <input
-                  type="password"
-                  value={novaSenha}
-                  onChange={(e) => setNovaSenha(e.target.value)}
-                  placeholder="Nova senha"
-                  className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700"
-                />
-
-                <input
-                  type="password"
-                  value={confirmarSenha}
-                  onChange={(e) => setConfirmarSenha(e.target.value)}
-                  placeholder="Confirmar nova senha"
-                  className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700"
-                />
-
-                <button
-                  onClick={alterarSenha}
-                  disabled={alterandoSenha}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-600 rounded-2xl font-bold py-3"
-                >
-                  {alterandoSenha ? "Alterando..." : "Alterar senha"}
-                </button>
-              </div>
-            </div>
-          </section>
-        )}
+          </div>
+        </section>
+      )}
     </ClienteLayoutPremium>
   );
 }
 
-function Aba({ ativa, onClick, children }: any) {
+function SuporteSection({
+  tickets,
+  assuntoTicket,
+  setAssuntoTicket,
+  mensagemTicket,
+  setMensagemTicket,
+  abrirTicket,
+  abrindoTicket,
+  carregarTickets,
+  carregandoTickets,
+  dataHoraPt,
+}: any) {
   return (
-    <button
-      onClick={onClick}
-      className={`px-4 py-3 rounded-2xl font-bold text-sm ${ativa ? "bg-green-600 text-white" : "bg-zinc-800 text-gray-300 hover:bg-zinc-700"}`}
-    >
-      {children}
-    </button>
-  );
-}
+    <section className="space-y-6">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-bold">Suporte</h2>
+            <p className="text-gray-400 text-sm mt-1">
+              Abra tickets para suporte técnico, financeiro ou dúvidas gerais.
+            </p>
+          </div>
 
-function Card({ titulo, valor, texto }: any) {
-  return (
-    <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
-      <p className="text-gray-400 text-sm">{titulo}</p>
-      <p className="text-3xl font-black mt-2">{valor}</p>
-      <p className="text-gray-500 text-xs mt-2">{texto}</p>
-    </div>
+          <button
+            onClick={carregarTickets}
+            disabled={carregandoTickets}
+            className="bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-600 px-5 py-3 rounded-2xl font-bold text-sm"
+          >
+            {carregandoTickets ? "Atualizando..." : "Atualizar tickets"}
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
+        <h3 className="text-xl font-bold mb-5">Abrir novo ticket</h3>
+
+        <div className="grid gap-4">
+          <input
+            value={assuntoTicket}
+            onChange={(e) => setAssuntoTicket(e.target.value)}
+            placeholder="Assunto"
+            className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700"
+          />
+
+          <textarea
+            value={mensagemTicket}
+            onChange={(e) => setMensagemTicket(e.target.value)}
+            placeholder="Descreva seu problema..."
+            rows={6}
+            className="p-3 rounded-2xl bg-zinc-800 border border-zinc-700"
+          />
+
+          <button
+            onClick={abrirTicket}
+            disabled={abrindoTicket}
+            className="bg-green-600 hover:bg-green-700 disabled:bg-zinc-600 py-3 rounded-2xl font-bold"
+          >
+            {abrindoTicket ? "Abrindo ticket..." : "Abrir ticket"}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-4">
+        {tickets.map((ticket: any) => (
+          <div
+            key={ticket.id}
+            className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5"
+          >
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div>
+                <h3 className="text-xl font-bold">{ticket.assunto}</h3>
+                <p className="text-gray-400 text-sm mt-1">
+                  Criado em {dataHoraPt(ticket.criado_em)}
+                </p>
+              </div>
+
+              <StatusBadge status={ticket.status} />
+            </div>
+
+            <div className="space-y-3">
+              {(ticket.tickets_mensagens || []).map((msg: any) => (
+                <div
+                  key={msg.id}
+                  className={`rounded-2xl p-4 border ${
+                    msg.autor_tipo === "cliente"
+                      ? "bg-blue-900/20 border-blue-700"
+                      : "bg-zinc-800 border-zinc-700"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="font-bold text-sm">
+                      {msg.autor_nome || msg.autor_tipo}
+                    </p>
+
+                    <p className="text-xs text-gray-400">
+                      {dataHoraPt(msg.criado_em)}
+                    </p>
+                  </div>
+
+                  <p className="text-sm whitespace-pre-wrap">{msg.mensagem}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {tickets.length === 0 && <Vazio texto="Nenhum ticket encontrado." />}
+      </div>
+    </section>
   );
 }
 
 function StatusBadge({ status }: any) {
   const s = String(status || "").toLowerCase();
-  const ativo = ["ativo", "aprovado", "conectado", "open", "connected"].includes(s);
-  const aguardando = ["aguardando pagamento", "pendente", "connecting", "qrcode", "aguardando qr code"].includes(s);
+  const ativo = ["ativo", "aprovado", "conectado", "open", "connected", "aberto"].includes(s);
+  const aguardando = [
+    "aguardando pagamento",
+    "pendente",
+    "connecting",
+    "qrcode",
+    "aguardando qr code",
+    "respondido",
+  ].includes(s);
 
   return (
-    <span className={`px-3 py-1 rounded-full border text-xs font-bold w-fit ${ativo ? "bg-green-900/40 text-green-400 border-green-700" : aguardando ? "bg-yellow-900/40 text-yellow-400 border-yellow-700" : "bg-red-900/40 text-red-400 border-red-700"}`}>
+    <span
+      className={`px-3 py-1 rounded-full border text-xs font-bold w-fit ${
+        ativo
+          ? "bg-green-900/40 text-green-400 border-green-700"
+          : aguardando
+          ? "bg-yellow-900/40 text-yellow-400 border-yellow-700"
+          : "bg-red-900/40 text-red-400 border-red-700"
+      }`}
+    >
       {status || "-"}
     </span>
   );
@@ -899,7 +1176,9 @@ function StatusBadge({ status }: any) {
 function PainelConta({ cliente, statusPt, grande = false }: any) {
   return (
     <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
-      <h2 className={`${grande ? "text-2xl" : "text-xl"} font-bold mb-4`}>Dados da conta</h2>
+      <h2 className={`${grande ? "text-2xl" : "text-xl"} font-bold mb-4`}>
+        Dados da conta
+      </h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Info label="Nome" value={cliente?.nome} />
@@ -927,14 +1206,21 @@ function ServicoResumoCard({ item, statusPt, dataPt }: any) {
     <div className="bg-zinc-800 border border-zinc-700 rounded-2xl p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="font-bold text-lg">{item.servicos_ia?.nome || "Serviço"}</h3>
-          <p className="text-gray-400 text-sm">Plano: {item.planos?.nome || item.plano_id || "-"}</p>
+          <h3 className="font-bold text-lg">
+            {item.servicos_ia?.nome || "Serviço"}
+          </h3>
+          <p className="text-gray-400 text-sm">
+            Plano: {item.planos?.nome || item.plano_id || "-"}
+          </p>
         </div>
         <StatusBadge status={statusPt(item.status)} />
       </div>
 
       <div className="grid grid-cols-2 gap-3 mt-4">
-        <Info label="WhatsApp" value={statusPt(item.evolution?.status || item.evolution_status || "desconectado")} />
+        <Info
+          label="WhatsApp"
+          value={statusPt(item.evolution?.status || item.evolution_status || "desconectado")}
+        />
         <Info label="Vencimento" value={dataPt(item.data_expiracao)} />
       </div>
     </div>
@@ -946,8 +1232,12 @@ function ServicoDetalheCard({ item, statusPt, dataPt }: any) {
     <div className="bg-zinc-800 border border-zinc-700 rounded-3xl p-5">
       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4">
         <div>
-          <h3 className="text-xl font-bold">{item.servicos_ia?.nome || "Serviço"}</h3>
-          <p className="text-gray-400 text-sm mt-1">{item.servicos_ia?.descricao || "Serviço contratado."}</p>
+          <h3 className="text-xl font-bold">
+            {item.servicos_ia?.nome || "Serviço"}
+          </h3>
+          <p className="text-gray-400 text-sm mt-1">
+            {item.servicos_ia?.descricao || "Serviço contratado."}
+          </p>
         </div>
         <StatusBadge status={statusPt(item.status)} />
       </div>
@@ -974,8 +1264,12 @@ function WhatsAppServicoCard({ item, qrcodeSrc, statusPt, dataPt, dataHoraPt, co
       <div className="p-5 border-b border-zinc-800">
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           <div>
-            <h3 className="text-2xl font-bold">{item.servicos_ia?.nome || "Serviço"}</h3>
-            <p className="text-gray-400 text-sm mt-1">Plano: {item.planos?.nome || item.plano_id || "-"}</p>
+            <h3 className="text-2xl font-bold">
+              {item.servicos_ia?.nome || "Serviço"}
+            </h3>
+            <p className="text-gray-400 text-sm mt-1">
+              Plano: {item.planos?.nome || item.plano_id || "-"}
+            </p>
           </div>
 
           <StatusBadge status={statusPt(evolution.status || item.evolution_status || "desconectado")} />
@@ -990,20 +1284,32 @@ function WhatsAppServicoCard({ item, qrcodeSrc, statusPt, dataPt, dataHoraPt, co
                 ✓
               </div>
               <p className="font-bold text-green-400">WhatsApp conectado</p>
-              <p className="text-gray-400 text-sm mt-1">Esta automação já está pronta para uso.</p>
+              <p className="text-gray-400 text-sm mt-1">
+                Esta automação já está pronta para uso.
+              </p>
             </div>
           ) : qr ? (
             <div className="text-center">
-              <img src={qrcodeSrc(qr)} alt="QR Code WhatsApp" className="w-56 h-56 object-contain bg-white rounded-2xl p-2 mx-auto" />
-              <p className="text-gray-400 text-xs mt-3">Escaneie no WhatsApp para conectar.</p>
+              <img
+                src={qrcodeSrc(qr)}
+                alt="QR Code WhatsApp"
+                className="w-56 h-56 object-contain bg-white rounded-2xl p-2 mx-auto"
+              />
+              <p className="text-gray-400 text-xs mt-3">
+                Escaneie no WhatsApp para conectar.
+              </p>
             </div>
           ) : (
             <div className="text-center">
               <div className="w-20 h-20 rounded-full bg-yellow-600 flex items-center justify-center mx-auto mb-4 text-3xl font-black">
                 !
               </div>
-              <p className="font-bold text-yellow-400">QR Code ainda não recebido</p>
-              <p className="text-gray-400 text-sm mt-1">Clique em Novo QR Code ou aguarde a Evolution gerar o QR Code.</p>
+              <p className="font-bold text-yellow-400">
+                QR Code ainda não recebido
+              </p>
+              <p className="text-gray-400 text-sm mt-1">
+                Clique em Novo QR Code ou aguarde a Evolution gerar o QR Code.
+              </p>
             </div>
           )}
         </div>
@@ -1121,8 +1427,18 @@ function LogsIaSection({ logs, dataHoraPt }: any) {
             </div>
 
             <div className="text-sm text-gray-400 xl:text-right">
-              <p>Remetente: <span className="text-white font-bold break-all">{log.nome_remetente || log.remetente || "-"}</span></p>
-              <p>Instância: <span className="text-white font-bold break-all">{log.instance_name || "-"}</span></p>
+              <p>
+                Remetente:{" "}
+                <span className="text-white font-bold break-all">
+                  {log.nome_remetente || log.remetente || "-"}
+                </span>
+              </p>
+              <p>
+                Instância:{" "}
+                <span className="text-white font-bold break-all">
+                  {log.instance_name || "-"}
+                </span>
+              </p>
             </div>
           </div>
 
@@ -1164,7 +1480,9 @@ function TabelaPagamentos({ pagamentos, statusPt, dinheiro, dataPt }: any) {
           {pagamentos.map((p: any) => (
             <tr key={p.id} className="border-b border-zinc-800">
               <td className="p-3">{dataPt(p.criado_em)}</td>
-              <td className="p-3"><StatusBadge status={statusPt(p.status)} /></td>
+              <td className="p-3">
+                <StatusBadge status={statusPt(p.status)} />
+              </td>
               <td className="p-3 font-bold">{dinheiro(p.valor)}</td>
               <td className="p-3">{dinheiro(p.valor_original || p.valor)}</td>
               <td className="p-3">{dinheiro(p.desconto_valor || 0)}</td>
@@ -1188,7 +1506,11 @@ function TabelaPagamentos({ pagamentos, statusPt, dinheiro, dataPt }: any) {
 
 function Vazio({ texto, compacto = false }: any) {
   return (
-    <div className={`bg-zinc-900 border border-zinc-700 rounded-3xl text-center text-gray-400 ${compacto ? "p-5" : "p-10"}`}>
+    <div
+      className={`bg-zinc-900 border border-zinc-700 rounded-3xl text-center text-gray-400 ${
+        compacto ? "p-5" : "p-10"
+      }`}
+    >
       {texto}
     </div>
   );
