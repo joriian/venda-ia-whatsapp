@@ -168,6 +168,18 @@ async function buscarServico(servicoId: string) {
   return data;
 }
 
+async function consumirCreditoSeNecessario(metadata: any) {
+  if (!metadata.credito_id) return;
+
+  await supabase
+    .from("creditos_cliente")
+    .update({
+      utilizado: true,
+      utilizado_em: new Date().toISOString(),
+    })
+    .eq("id", metadata.credito_id);
+}
+
 async function registrarPagamento(params: {
   clienteId: string;
   clienteServicoId?: string | null;
@@ -493,6 +505,8 @@ export async function POST(req: Request) {
           traduzirStatusPagamento(statusPagamento),
       });
     }
+
+    await consumirCreditoSeNecessario(metadata);
 
     const ativacao = await ativarServico({
       cliente,
