@@ -7,7 +7,7 @@ const supabase = createClient(
 );
 
 export async function GET() {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("tickets_suporte")
     .select(`
       *,
@@ -16,7 +16,12 @@ export async function GET() {
     `)
     .order("criado_em", { ascending: false });
 
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
   return NextResponse.json({
+    ok: true,
     tickets: data || [],
   });
 }
@@ -26,16 +31,10 @@ export async function POST(req: Request) {
 
   const { ticket_id, mensagem } = body;
 
-  const { data: ticket } = await supabase
-    .from("tickets_suporte")
-    .select("*")
-    .eq("id", ticket_id)
-    .single();
-
-  if (!ticket) {
+  if (!ticket_id || !mensagem) {
     return NextResponse.json(
-      { error: "Ticket não encontrado" },
-      { status: 404 }
+      { error: "Ticket e mensagem são obrigatórios" },
+      { status: 400 }
     );
   }
 
@@ -55,23 +54,33 @@ export async function POST(req: Request) {
     })
     .eq("id", ticket_id);
 
-  return NextResponse.json({
-    ok: true,
-  });
+  return NextResponse.json({ ok: true });
 }
 
 export async function PUT(req: Request) {
   const body = await req.json();
 
-  await supabase
+  const ticketId = body.ticket_id;
+
+  if (!ticketId) {
+    return NextResponse.json(
+      { error: "Ticket obrigatório" },
+      { status: 400 }
+    );
+  }
+
+  const { error } = await supabase
     .from("tickets_suporte")
     .update({
       status: "fechado",
+      fechado_em: new Date().toISOString(),
       atualizado_em: new Date().toISOString(),
     })
-    .eq("id", body.ticket_id);
+    .eq("id", ticketId);
 
-  return NextResponse.json({
-    ok: true,
-  });
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
 }
