@@ -23,7 +23,6 @@ function formatarNumero(telefone: string) {
   const numero = limparTelefone(telefone);
 
   if (!numero) return "";
-
   if (numero.startsWith("55")) return numero;
 
   return `55${numero}`;
@@ -47,32 +46,36 @@ function hashSenha(senha: string) {
   return crypto.createHash("sha256").update(senha).digest("hex");
 }
 
-async function buscarInstanciaSistema() {
-  const fixa =
-    process.env.EVOLUTION_NOTIFY_INSTANCE ||
-    process.env.EVOLUTION_DEFAULT_INSTANCE ||
-    "";
-
-  if (fixa) return fixa;
-
+async function buscarConfiguracaoVerificacao() {
   const { data } = await supabase
-    .from("instancias_evolution")
-    .select("instance_name,status")
-    .in("status", ["open", "connected", "conectado"])
-    .limit(1)
+    .from("configuracoes_sistema")
+    .select("*")
+    .eq("chave", "whatsapp_verificacao")
     .maybeSingle();
 
-  return data?.instance_name || "";
+  return data?.valor || null;
 }
 
 async function enviarWhatsapp(params: {
   telefone: string;
   mensagem: string;
 }) {
-  const instanceName = await buscarInstanciaSistema();
+  if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+    throw new Error("EVOLUTION_API_URL ou EVOLUTION_API_KEY não configurado.");
+  }
 
-  if (!instanceName) {
-    throw new Error("Nenhuma instância conectada para enviar o código.");
+  const config = await buscarConfiguracaoVerificacao();
+
+  if (!config) {
+    throw new Error("Configuração de verificação não encontrada.");
+  }
+
+  if (!config.ativo) {
+    throw new Error("Número de verificação está desativado.");
+  }
+
+  if (!config.instance_name) {
+    throw new Error("Instância de verificação não configurada.");
   }
 
   const numero = formatarNumero(params.telefone);
@@ -82,7 +85,7 @@ async function enviarWhatsapp(params: {
   }
 
   await axios.post(
-    `${EVOLUTION_API_URL}/message/sendText/${instanceName}`,
+    `${EVOLUTION_API_URL}/message/sendText/${config.instance_name}`,
     {
       number: numero,
       text: params.mensagem,
@@ -123,10 +126,7 @@ export async function POST(req: Request) {
     }
 
     if (!email.includes("@")) {
-      return NextResponse.json(
-        { error: "Email inválido." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Email inválido." }, { status: 400 });
     }
 
     if (telefone.length < 10) {
@@ -206,16 +206,12 @@ export async function POST(req: Request) {
         telefone,
         endereco: endereco || null,
         documento: documento || null,
-
         senha_hash: hashSenha(senha),
         codigo,
-
         telefone_verificado: false,
         aceitou_termos: aceitouTermos,
-
         tentativas: 0,
         expira_em: expiraEm,
-
         servico_id: servicoId,
         plano_id: planoId,
         cupom_codigo: cupomCodigo || null,
@@ -256,10 +252,18 @@ export async function POST(req: Request) {
       error.response?.data || error.message
     );
 
+    const detalhe =
+      typeof error.response?.data === "string"
+        ? error.response.data
+        : error.response?.data?.message ||
+          error.response?.data?.error ||
+          error.message ||
+          "Erro interno";
+
     return NextResponse.json(
       {
         error: "Erro ao enviar código de verificação.",
-        detalhe: error.response?.data || error.message,
+        detalhe,
       },
       { status: 500 }
     );
