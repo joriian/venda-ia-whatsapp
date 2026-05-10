@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { POST as webhookMercadoPago } from "../mercadopago/route";
+
+import { POST as webhookMercadoPago } from "../../webhook/mercadopago/route";
 
 export async function GET(req: Request) {
   try {
@@ -12,18 +13,23 @@ export async function GET(req: Request) {
 
     if (!paymentId) {
       return NextResponse.json(
-        { error: "ID do pagamento obrigatório" },
+        {
+          error: "ID do pagamento obrigatório",
+        },
         { status: 400 }
       );
     }
 
     const fakeRequest = new Request(req.url, {
       method: "POST",
+
       headers: {
         "Content-Type": "application/json",
       },
+
       body: JSON.stringify({
         type: "payment",
+
         data: {
           id: paymentId,
         },
@@ -32,12 +38,22 @@ export async function GET(req: Request) {
 
     return await webhookMercadoPago(fakeRequest);
   } catch (error: any) {
-    console.log("ERRO SINCRONIZAR PAGAMENTO:", error.message);
+    console.log(
+      "ERRO SINCRONIZAR PAGAMENTO:",
+      error?.response?.data ||
+        error?.message ||
+        error
+    );
 
     return NextResponse.json(
       {
-        error: "Erro ao sincronizar pagamento",
-        detalhe: error.message,
+        error:
+          "Erro ao sincronizar pagamento",
+
+        detalhe:
+          error?.response?.data ||
+          error?.message ||
+          "Erro interno",
       },
       { status: 500 }
     );
