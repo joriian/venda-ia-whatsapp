@@ -40,6 +40,13 @@ export default function ClientePage() {
   const [abrindoTicket, setAbrindoTicket] = useState(false);
   const [carregandoTickets, setCarregandoTickets] = useState(false);
 
+  const [creditos, setCreditos] = useState<any[]>([]);
+  const [resumoCreditos, setResumoCreditos] = useState<any>({
+    total_disponivel: 0,
+    total_utilizado: 0,
+  });
+  const [carregandoCreditos, setCarregandoCreditos] = useState(false);
+
   useEffect(() => {
     iniciarSessao();
   }, []);
@@ -215,7 +222,47 @@ export default function ClientePage() {
     if (aba === "suporte" && token) {
       carregarTickets();
     }
+
+    if (aba === "planos" && token) {
+      carregarCreditos();
+    }
   }, [aba, filtroLog, token]);
+
+  async function carregarCreditos() {
+    setCarregandoCreditos(true);
+
+    try {
+      const res = await fetch("/api/cliente/creditos", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          token,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        alert(data.error || "Erro ao carregar créditos.");
+        return;
+      }
+
+      setCreditos(data.creditos || []);
+      setResumoCreditos(
+        data.resumo || {
+          total_disponivel: 0,
+          total_utilizado: 0,
+        }
+      );
+    } catch (error) {
+      console.log(error);
+      alert("Erro ao carregar créditos.");
+    } finally {
+      setCarregandoCreditos(false);
+    }
+  }
 
   async function carregarTickets() {
     setCarregandoTickets(true);
@@ -458,6 +505,9 @@ export default function ClientePage() {
       aberto: "Aberto",
       respondido: "Respondido",
       fechado: "Fechado",
+      utilizado: "Utilizado",
+      disponível: "Disponível",
+      disponivel: "Disponível",
       aguardando_pagamento: "Aguardando pagamento",
       approved: "Aprovado",
       pending: "Pendente",
@@ -809,6 +859,91 @@ export default function ClientePage() {
 
       {aba === "planos" && (
         <section className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-zinc-900 border border-green-700 rounded-3xl p-5">
+              <p className="text-gray-400 text-sm">Créditos disponíveis</p>
+
+              <p className="text-4xl font-black text-green-400 mt-2">
+                {dinheiro(resumoCreditos.total_disponivel)}
+              </p>
+
+              <p className="text-gray-500 text-xs mt-2">
+                Valor abatido automaticamente em upgrades e trocas de plano.
+              </p>
+            </div>
+
+            <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
+              <p className="text-gray-400 text-sm">Créditos utilizados</p>
+
+              <p className="text-4xl font-black mt-2">
+                {dinheiro(resumoCreditos.total_utilizado)}
+              </p>
+            </div>
+
+            <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
+              <p className="text-gray-400 text-sm">Histórico</p>
+
+              <p className="text-4xl font-black mt-2">{creditos.length}</p>
+
+              <p className="text-gray-500 text-xs mt-2">
+                Créditos gerados por upgrades, trocas ou renovação proporcional.
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-5">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="text-2xl font-bold">Histórico de créditos</h2>
+
+                <p className="text-gray-400 text-sm mt-1">
+                  Créditos proporcionais gerados automaticamente.
+                </p>
+              </div>
+
+              <button
+                onClick={carregarCreditos}
+                disabled={carregandoCreditos}
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 px-5 py-3 rounded-2xl font-bold text-sm"
+              >
+                {carregandoCreditos ? "Atualizando..." : "Atualizar"}
+              </button>
+            </div>
+
+            <div className="grid gap-4">
+              {creditos.map((credito: any) => (
+                <div
+                  key={credito.id}
+                  className="bg-zinc-800 border border-zinc-700 rounded-2xl p-4"
+                >
+                  <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+                    <div>
+                      <p className="font-bold text-lg text-green-400">
+                        {dinheiro(credito.valor_credito)}
+                      </p>
+
+                      <p className="text-gray-400 text-sm mt-1">
+                        {credito.observacoes || credito.origem}
+                      </p>
+
+                      <p className="text-gray-500 text-xs mt-2">
+                        Criado em {dataHoraPt(credito.criado_em)}
+                      </p>
+                    </div>
+
+                    <StatusBadge
+                      status={credito.utilizado ? "Utilizado" : "Disponível"}
+                    />
+                  </div>
+                </div>
+              ))}
+
+              {creditos.length === 0 && (
+                <Vazio texto="Nenhum crédito disponível." />
+              )}
+            </div>
+          </div>
+
           {!cliente?.telefone_verificado && (
             <div className="bg-yellow-900/30 border border-yellow-700 rounded-3xl p-5">
               <h2 className="text-xl font-bold text-yellow-400">
@@ -1148,7 +1283,17 @@ function SuporteSection({
 
 function StatusBadge({ status }: any) {
   const s = String(status || "").toLowerCase();
-  const ativo = ["ativo", "aprovado", "conectado", "open", "connected", "aberto"].includes(s);
+  const ativo = [
+    "ativo",
+    "aprovado",
+    "conectado",
+    "open",
+    "connected",
+    "aberto",
+    "disponível",
+    "disponivel",
+  ].includes(s);
+
   const aguardando = [
     "aguardando pagamento",
     "pendente",
@@ -1156,6 +1301,7 @@ function StatusBadge({ status }: any) {
     "qrcode",
     "aguardando qr code",
     "respondido",
+    "utilizado",
   ].includes(s);
 
   return (
@@ -1487,7 +1633,9 @@ function TabelaPagamentos({ pagamentos, statusPt, dinheiro, dataPt }: any) {
               <td className="p-3">{dinheiro(p.valor_original || p.valor)}</td>
               <td className="p-3">{dinheiro(p.desconto_valor || 0)}</td>
               <td className="p-3">{p.cupom_codigo || "-"}</td>
-              <td className="p-3 break-all">{p.payment_id || p.mercado_pago_id || "-"}</td>
+              <td className="p-3 break-all">
+                {p.payment_id || p.mercado_pago_id || "-"}
+              </td>
             </tr>
           ))}
 
