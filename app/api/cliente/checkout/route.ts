@@ -18,7 +18,7 @@ async function validarCliente(token: string) {
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
 
-    if (decoded?.id && decoded?.tipo === "cliente") {
+    if (decoded?.id) {
       const { data } = await supabase
         .from("clientes_ia_whatsapp")
         .select("*")
@@ -35,15 +35,7 @@ async function validarCliente(token: string) {
     .eq("session_token", token)
     .maybeSingle();
 
-  if (!data) return null;
-
-  const expira = data.session_expires_at
-    ? new Date(data.session_expires_at)
-    : null;
-
-  if (expira && expira < new Date()) return null;
-
-  return data;
+  return data || null;
 }
 
 async function buscarServicoExistente(clienteId: string, servicoId: string) {
@@ -52,11 +44,72 @@ async function buscarServicoExistente(clienteId: string, servicoId: string) {
     .select("*")
     .eq("cliente_id", clienteId)
     .eq("servico_id", servicoId)
-    .in("status", ["ativo", "aguardando_pagamento", "vencido"])
+    .in("status", ["ativo", "aguardando_pagamento", "vencido", "bloqueado"])
     .order("created_at", { ascending: false })
     .limit(1);
 
   return data?.[0] || null;
+}
+
+function diasDoPlano(plano: any) {
+  return Number(plano?.meses || 1) * 30;
+}
+
+function calcularCreditoProporcional(vinculoAtual: any, planoAtual: any) {
+  if (!vinculoAtual?.data_expiracao || !planoAtual?.valor) {
+    return { dias_restantes: 0, credito: 0 };
+  }
+
+  const agora = new Date();
+  const expira = new Date(vinculoAtual.data_expiracao);
+
+  if (expira <= agora) {
+    return { dias_restantes: 0, credito: 0 };
+  }
+
+  const msRestantes = expira.getTime() - agora.getTime();
+  const diasRestantes = Math.ceil(msRestantes / (1000 * 60 * 60 * 24));
+
+  const valorPlanoAtual = Number(planoAtual.valor || 0);
+  const totalDias = diasDoPlano(planoAtual);
+  const valorDia = totalDias > 0 ? valorPlanoAtual / totalDias : 0;
+
+  const credito = Number((diasRestantes * valorDia).toFixed(2));
+
+  return {
+    dias_restantes: diasRestantes,
+    credito,
+  };
+}
+
+async function salvarCreditoProporcional(params: {
+  clienteId: string;
+  clienteServicoId: string;
+  valorCredito: number;
+  origem: string;
+  observacoes: string;
+}) {
+  if (params.valorCredito <= 0) return null;
+
+  const { data, error } = await supabase
+    .from("creditos_cliente")
+    .insert({
+      cliente_id: params.clienteId,
+      cliente_servico_id: params.clienteServicoId,
+      valor_credito: params.valorCredito,
+      origem: params.origem,
+      observacoes: params.observacoes,
+      criado_em: new Date().toISOString(),
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    console.log("ERRO AO SALVAR CRÉDITO:", error.message);
+    return null;
+  }
+
+  return data;
 }
 
 async function validarCupom(codigo: string | null) {
@@ -84,43 +137,6 @@ async function validarCupom(codigo: string | null) {
   }
 
   return data;
-}
-
-function diasDoPlano(plano: any) {
-  return Number(plano.meses || 1) * 30;
-}
-
-function calcularCreditoProporcional(vinculoAtual: any, planoAtual: any) {
-  if (!vinculoAtual?.data_expiracao || !planoAtual?.valor) {
-    return {
-      dias_restantes: 0,
-      credito: 0,
-    };
-  }
-
-  const agora = new Date();
-  const expira = new Date(vinculoAtual.data_expiracao);
-
-  if (expira <= agora) {
-    return {
-      dias_restantes: 0,
-      credito: 0,
-    };
-  }
-
-  const msRestantes = expira.getTime() - agora.getTime();
-  const diasRestantes = Math.ceil(msRestantes / (1000 * 60 * 60 * 24));
-
-  const valorPlanoAtual = Number(planoAtual.valor || 0);
-  const totalDias = diasDoPlano(planoAtual);
-
-  const valorDia = totalDias > 0 ? valorPlanoAtual / totalDias : 0;
-  const credito = Number((diasRestantes * valorDia).toFixed(2));
-
-  return {
-    dias_restantes: diasRestantes,
-    credito,
-  };
 }
 
 function calcularDescontoCupom(valor: number, cupom: any) {
@@ -183,26 +199,19 @@ async function criarOuAtualizarVinculoPendente(params: {
     const { data, error } = await supabase
       .from("cliente_servicos")
       .update({
-        plano_id: plano.id,
-        status:
-          vinculoExistente.status === "ativo"
-            ? "ativo"
-            : "aguardando_pagamento",
+        plano_checkout_id: plano.id,
+        movimento_checkout: tipoMovimento,
         checkout_expira_em: checkoutExpiraEm,
         workflow_id: servico.workflow_id || null,
         webhook_url: servico.webhook_url || null,
         instance_name: instanceName,
-        movimento_checkout: tipoMovimento,
-        plano_checkout_id: plano.id,
         updated_at: new Date().toISOString(),
       })
       .eq("id", vinculoExistente.id)
       .select("id")
       .single();
 
-    if (error) {
-      throw new Error(`Erro ao atualizar vínculo: ${error.message}`);
-    }
+    if (error) throw new Error(`Erro ao atualizar vínculo: ${error.message}`);
 
     return data.id;
   }
@@ -214,6 +223,8 @@ async function criarOuAtualizarVinculoPendente(params: {
       cliente_id: cliente.id,
       servico_id: servico.id,
       plano_id: plano.id,
+      plano_checkout_id: plano.id,
+      movimento_checkout: tipoMovimento,
       status: "aguardando_pagamento",
       data_inicio: null,
       data_expiracao: null,
@@ -223,17 +234,13 @@ async function criarOuAtualizarVinculoPendente(params: {
       evolution_status: "aguardando_pagamento",
       evolution_configurado: false,
       checkout_expira_em: checkoutExpiraEm,
-      movimento_checkout: tipoMovimento,
-      plano_checkout_id: plano.id,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
     .select("id")
     .single();
 
-  if (error) {
-    throw new Error(`Erro ao criar vínculo: ${error.message}`);
-  }
+  if (error) throw new Error(`Erro ao criar vínculo: ${error.message}`);
 
   return data.id;
 }
@@ -262,15 +269,6 @@ export async function POST(req: Request) {
         {
           error:
             "Antes de contratar, verifique seu número de WhatsApp na área do cliente.",
-        },
-        { status: 403 }
-      );
-    }
-
-    if (cliente.status === "bloqueado") {
-      return NextResponse.json(
-        {
-          error: "Sua conta está bloqueada. Entre em contato com o suporte.",
         },
         { status: 403 }
       );
@@ -317,6 +315,7 @@ export async function POST(req: Request) {
     let tipoMovimento = "nova_contratacao";
     let creditoProporcional = 0;
     let diasRestantes = 0;
+    let creditoId: string | null = null;
 
     if (vinculoExistente?.id) {
       if (vinculoExistente.plano_id === planoNovo.id) {
@@ -353,6 +352,18 @@ export async function POST(req: Request) {
       tipoMovimento,
     });
 
+    if (creditoProporcional > 0 && tipoMovimento === "troca_plano") {
+      const creditoSalvo = await salvarCreditoProporcional({
+        clienteId: cliente.id,
+        clienteServicoId,
+        valorCredito: valores.credito_proporcional,
+        origem: "troca_plano",
+        observacoes: `Crédito proporcional de ${diasRestantes} dia(s) restantes ao trocar para o plano ${planoNovo.nome}.`,
+      });
+
+      creditoId = creditoSalvo?.id || null;
+    }
+
     const appUrl =
       process.env.NEXT_PUBLIC_APP_URL ||
       process.env.NEXT_PUBLIC_SITE_URL ||
@@ -376,12 +387,10 @@ export async function POST(req: Request) {
           unit_price: valores.valor_final,
         },
       ],
-
       payer: {
         name: cliente.nome,
         email: cliente.email,
       },
-
       metadata: {
         cliente_id: cliente.id,
         cliente_servico_id: clienteServicoId,
@@ -391,6 +400,7 @@ export async function POST(req: Request) {
         tipo_movimento: tipoMovimento,
         dias_restantes_credito: diasRestantes,
         credito_proporcional: valores.credito_proporcional,
+        credito_id: creditoId,
         valor_original: valores.valor_original,
         desconto_valor: valores.desconto_valor,
         cupom_codigo: cupom?.codigo || null,
@@ -398,17 +408,14 @@ export async function POST(req: Request) {
         email: cliente.email,
         telefone: cliente.telefone || null,
       },
-
       notification_url:
         process.env.MERCADOPAGO_WEBHOOK_URL ||
         `${appUrl}/api/webhook/mercadopago`,
-
       back_urls: {
         success: `${appUrl}/aguardando-pagamento?cliente=${cliente.id}`,
         pending: `${appUrl}/aguardando-pagamento?cliente=${cliente.id}`,
         failure: `${appUrl}/aguardando-pagamento?cliente=${cliente.id}`,
       },
-
       auto_return: "approved",
     };
 
@@ -440,6 +447,7 @@ export async function POST(req: Request) {
       cliente_servico_id: clienteServicoId,
       tipo_movimento: tipoMovimento,
       dias_restantes_credito: diasRestantes,
+      credito_id: creditoId,
       valores,
     });
   } catch (error: any) {
