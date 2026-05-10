@@ -205,6 +205,10 @@ async function criarOuAtualizarVinculoPendente(params: {
         workflow_id: servico.workflow_id || null,
         webhook_url: servico.webhook_url || null,
         instance_name: instanceName,
+        status:
+          vinculoExistente.status === "ativo"
+            ? vinculoExistente.status
+            : "aguardando_pagamento",
         updated_at: new Date().toISOString(),
       })
       .eq("id", vinculoExistente.id)
@@ -369,6 +373,11 @@ export async function POST(req: Request) {
       process.env.NEXT_PUBLIC_SITE_URL ||
       "";
 
+    const retornoBase =
+      `${appUrl}/aguardando-pagamento` +
+      `?cliente=${cliente.id}` +
+      `&token=${cliente.session_token}`;
+
     const titulo =
       tipoMovimento === "nova_contratacao"
         ? `${servico.nome} - ${planoNovo.nome}`
@@ -387,10 +396,12 @@ export async function POST(req: Request) {
           unit_price: valores.valor_final,
         },
       ],
+
       payer: {
         name: cliente.nome,
         email: cliente.email,
       },
+
       metadata: {
         cliente_id: cliente.id,
         cliente_servico_id: clienteServicoId,
@@ -408,14 +419,24 @@ export async function POST(req: Request) {
         email: cliente.email,
         telefone: cliente.telefone || null,
       },
+
+      external_reference: JSON.stringify({
+        cliente_id: cliente.id,
+        cliente_servico_id: clienteServicoId,
+        servico_id: servico.id,
+        plano_id: planoNovo.id,
+      }),
+
       notification_url:
         process.env.MERCADOPAGO_WEBHOOK_URL ||
         `${appUrl}/api/webhook/mercadopago`,
+
       back_urls: {
-        success: `${appUrl}/aguardando-pagamento?cliente=${cliente.id}`,
-        pending: `${appUrl}/aguardando-pagamento?cliente=${cliente.id}`,
-        failure: `${appUrl}/aguardando-pagamento?cliente=${cliente.id}`,
+        success: retornoBase,
+        pending: retornoBase,
+        failure: retornoBase,
       },
+
       auto_return: "approved",
     };
 
